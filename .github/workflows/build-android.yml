@@ -16,6 +16,12 @@ jobs:
       - run: npm install
       - run: npx expo install --fix
       - run: npx expo prebuild --platform android --no-install
-      - run: cd android && ./gradlew assembleRelease --no-daemon
+      - name: Gradle build
+        shell: bash
+        run: |
+          set -o pipefail
+          cd android && ./gradlew assembleRelease --no-daemon 2>&1 | tee ../build.log || {
+            grep -n -E "What went wrong|error:|e: |FAILURE|Could not|not found" -A3 ../build.log | head -25 | while IFS= read -r l; do echo "::error::${l:0:200}"; done
+            exit 1; }
       - uses: actions/upload-artifact@v4
         with: { name: register-watch-apk, path: app/android/app/build/outputs/apk/release/*.apk }

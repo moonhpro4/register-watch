@@ -1,0 +1,130 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, TextInput, Pressable, ScrollView, Image, PanResponder, StyleSheet, SafeAreaView, Alert } from "react-native";
+import * as SecureStore from "expo-secure-store";
+import { getLocales } from "expo-localization";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
+
+const ar = getLocales()[0]?.languageCode === "ar";
+const D = {
+  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
+  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
+};
+const t = (k) => D[ar ? "ar" : "en"][k];
+const Btn = ({ children, onPress, ghost }) => (
+  <Pressable onPress={onPress} style={[s.btn, ghost && s.ghost]}><Text style={[s.bt, ghost && { color: "#17212b" }]}>{children}</Text></Pressable>
+);
+
+export default function App() {
+  const [cfg, setCfg] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [cams, setCams] = useState([]);
+  const [scr, setScr] = useState({ n: "home" });
+  const [f, setF] = useState({});
+
+  useEffect(() => { (async () => {
+    const b = await SecureStore.getItemAsync("base"), k = await SecureStore.getItemAsync("key");
+    if (b && k) setCfg({ base: b, key: k }); setLoaded(true);
+  })(); }, []);
+
+  const api = useCallback(async (path, opt = {}) => {
+    const r = await fetch(cfg.base.replace(/\/$/, "") + path, { ...opt, headers: { authorization: "Bearer " + cfg.key, "content-type": "application/json" } });
+    return r.json();
+  }, [cfg]);
+  const load = useCallback(async () => { try { setCams(await api("/api/cameras")); } catch { Alert.alert(t("fail")); } }, [api]);
+  useEffect(() => { if (cfg) { load(); registerPush(api); } }, [cfg]);
+
+  if (!loaded) return null;
+  if (!cfg) return (
+    <SafeAreaView style={s.app}><Text style={s.h1}>Register Watch</Text>
+      <Text>{t("server")}</Text><TextInput style={s.in} autoCapitalize="none" value={f.base} onChangeText={(v) => setF({ ...f, base: v })} placeholder="https://….workers.dev" />
+      <Text>{t("key")}</Text><TextInput style={s.in} autoCapitalize="none" secureTextEntry value={f.key} onChangeText={(v) => setF({ ...f, key: v })} />
+      <Btn onPress={async () => { await SecureStore.setItemAsync("base", f.base.trim()); await SecureStore.setItemAsync("key", f.key.trim()); setCfg({ base: f.base.trim(), key: f.key.trim() }); }}>{t("save")}</Btn>
+    </SafeAreaView>);
+
+  if (scr.n === "add") return <AddCam api={api} done={(c) => { load(); setScr({ n: "created", c }); }} back={() => setScr({ n: "home" })} />;
+  if (scr.n === "created") return <Created api={api} c={scr.c} back={() => { load(); setScr({ n: "home" }); }} />;
+  if (scr.n === "cam") return <Cam api={api} cfg={cfg} cam={cams.find((c) => c.id === scr.id)} reload={load} back={() => setScr({ n: "home" })} />;
+
+  const stores = [...new Set(cams.map((c) => c.store))];
+  return (
+    <SafeAreaView style={s.app}><ScrollView>
+      <Text style={s.h1}>{t("title")}</Text>
+      {!cams.length ? (
+        <View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn></View>
+      ) : (<>
+        {stores.map((st) => (<View key={st}><Text style={s.h2}>{st}</Text>
+          {cams.filter((c) => c.store === st).map((c) => (
+            <Pressable key={c.id} style={s.card} onPress={() => setScr({ n: "cam", id: c.id })}>
+              <Text style={{ fontWeight: "700" }}>{c.name}</Text><Text style={s.mute}>{c.verified ? "● " + t("verified") : "○ " + t("unverified")}</Text></Pressable>))}</View>))}
+        <Btn ghost onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn></>)}
+    </ScrollView></SafeAreaView>);
+}
+
+function AddCam({ api, done, back }) {
+  const [st, setSt] = useState(""), [nm, setNm] = useState("");
+  return (<SafeAreaView style={s.app}>
+    <Text>{t("store")}</Text><TextInput style={s.in} value={st} onChangeText={setSt} />
+    <Text>{t("cname")}</Text><TextInput style={s.in} value={nm} onChangeText={setNm} />
+    <Btn onPress={async () => { if (!nm.trim()) return; const r = await api("/api/cameras", { method: "POST", body: JSON.stringify({ store: st.trim() || "—", name: nm.trim() }) }); done({ id: r.id, uploadUrl: r.uploadUrl }); }}>{t("create")}</Btn>
+    <Btn ghost onPress={back}>{t("cancel")}</Btn></SafeAreaView>);
+}
+
+// Shows the private upload link, then polls until the camera really sends a picture.
+function Created({ api, c, back }) {
+  const [ok, setOk] = useState(false);
+  useEffect(() => { const i = setInterval(async () => { const l = await api("/api/cameras"); if (l.find((x) => x.id === c.id)?.verified) { setOk(true); clearInterval(i); } }, 4000); return () => clearInterval(i); }, []);
+  return (<SafeAreaView style={s.app}><Text style={s.h2}>{t("url")}</Text>
+    <Text selectable style={[s.card, { writingDirection: "ltr", textAlign: "left" }]}>{c.uploadUrl}</Text>
+    <Text style={{ marginVertical: 12 }}>{ok ? "✅ " + t("verified") : "⏳ " + t("waiting")}</Text>
+    <Btn onPress={back}>{t("back")}</Btn></SafeAreaView>);
+}
+
+function Cam({ api, cfg, cam, reload, back }) {
+  const [tab, setTab] = useState("live"), [edit, setEdit] = useState(false), [tmp, setTmp] = useState(null), [alerts, setAlerts] = useState([]);
+  const size = useRef({ w: 1, h: 1 }), st = useRef(null);
+  const hdr = { Authorization: "Bearer " + cfg.key };
+  useEffect(() => { api("/api/alerts?camera=" + cam.id).then(setAlerts).catch(() => {}); }, []);
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: (e) => { st.current = { x: e.nativeEvent.locationX / size.current.w * 100, y: e.nativeEvent.locationY / size.current.h * 100 }; },
+    onPanResponderMove: (e, g) => {
+      const cx = Math.min(100, Math.max(0, st.current.x + g.dx / size.current.w * 100)), cy = Math.min(100, Math.max(0, st.current.y + g.dy / size.current.h * 100));
+      setTmp({ x: Math.min(st.current.x, cx), y: Math.min(st.current.y, cy), w: Math.abs(cx - st.current.x), h: Math.abs(cy - st.current.y) });
+    } })).current;
+  const z = edit ? tmp || cam.zone : cam.zone;
+  const putZone = async (zone) => { await api(`/api/cameras/${cam.id}/zone`, { method: "PUT", body: JSON.stringify({ zone }) }); setEdit(false); setTmp(null); reload(); };
+  const find = async () => { const r = await api(`/api/cameras/${cam.id}/find-register`, { method: "POST" }); if (r.zone) { setTmp(r.zone); setEdit(true); } else Alert.alert(t("noimg")); };
+  return (<SafeAreaView style={s.app}><ScrollView>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Pressable onPress={back}><Text style={{ fontSize: 18 }}>{t("back")}</Text></Pressable><Text style={s.h2}>{cam.name}</Text></View>
+    <View style={{ flexDirection: "row", gap: 8, marginVertical: 8 }}>
+      {["live", "thefts"].map((k) => <Pressable key={k} onPress={() => setTab(k)} style={[s.tab, tab === k && s.tabOn]}><Text>{t(k)}</Text></Pressable>)}</View>
+    {tab === "live" && (<>
+      <View style={s.scene} onLayout={(e) => (size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} {...(edit ? pan.panHandlers : {})}>
+        <Image source={{ uri: `${cfg.base.replace(/\/$/, "")}/api/cameras/${cam.id}/latest?t=${Date.now()}`, headers: hdr }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        {z && <View pointerEvents="none" style={[s.zone, { left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }]} />}</View>
+      {edit ? (<><Text style={s.mute}>{t("drag")}</Text><Btn onPress={() => tmp && putZone(tmp)}>{t("saveArea")}</Btn><Btn ghost onPress={() => { setEdit(false); setTmp(null); }}>{t("cancel")}</Btn></>) : (<>
+        {!cam.zone && <Text style={s.mute}>{t("noreg")}</Text>}
+        <Btn onPress={find}>{t("find")}</Btn><Btn ghost onPress={() => setEdit(true)}>{t("mark")}</Btn>{cam.zone && <Btn ghost onPress={() => putZone(null)}>{t("remove")}</Btn>}</>)}</>)}
+    {tab === "thefts" && (alerts.length ? alerts.map((a) => (
+      <View key={a.id} style={s.card}><Image source={{ uri: `${cfg.base.replace(/\/$/, "")}/api/alerts/${a.id}/image`, headers: hdr }} style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 8 }} />
+        <Text style={{ fontWeight: "700", marginTop: 6 }}>{a.note || a.kind}</Text><Text style={s.mute}>{new Date(a.created_at).toLocaleString(ar ? "ar" : "en")}</Text></View>)) : <Text style={s.mute}>{t("nothing")}</Text>)}
+  </ScrollView></SafeAreaView>);
+}
+
+async function registerPush(api) {
+  try {
+    const pid = Constants.expoConfig?.extra?.eas?.projectId; if (!pid) return;
+    const p = await Notifications.requestPermissionsAsync(); if (!p.granted) return;
+    const tok = (await Notifications.getExpoPushTokenAsync({ projectId: pid })).data;
+    await api("/api/devices", { method: "POST", body: JSON.stringify({ token: tok }) });
+  } catch {}
+}
+const s = StyleSheet.create({
+  app: { flex: 1, padding: 16, paddingTop: 48, backgroundColor: "#e9eef2" }, h1: { fontSize: 26, fontWeight: "700", marginBottom: 8 }, h2: { fontSize: 18, fontWeight: "700", marginVertical: 8 },
+  mute: { color: "#5d6b78", marginVertical: 6 }, card: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#cfd8df" },
+  btn: { backgroundColor: "#17212b", borderRadius: 10, padding: 13, marginTop: 8, alignItems: "center" }, ghost: { backgroundColor: "transparent", borderWidth: 1, borderColor: "#cfd8df" }, bt: { color: "#fff", fontWeight: "700" },
+  in: { backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#cfd8df", padding: 11, marginVertical: 6 },
+  tab: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: "#cfd8df" }, tabOn: { backgroundColor: "#fff" },
+  scene: { aspectRatio: 16 / 9, backgroundColor: "#2a3640", borderRadius: 12, overflow: "hidden" }, zone: { position: "absolute", borderWidth: 3, borderColor: "#0f8b8d", backgroundColor: "rgba(15,139,141,.25)" },
+});

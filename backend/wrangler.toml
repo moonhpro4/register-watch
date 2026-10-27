@@ -1,0 +1,18 @@
+name = "register-watch"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "register-watch"
+database_id = "PUT_YOUR_D1_ID_HERE"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "register-watch"
+
+[vars]
+AI_MODEL = "@cf/google/gemma-4-26b-a4b-it"

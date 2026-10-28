@@ -6,6 +6,7 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions: { contents: write }
     defaults: { run: { working-directory: app } }
     steps:
       - uses: actions/checkout@v4
@@ -27,3 +28,17 @@ jobs:
             exit 1; }
       - uses: actions/upload-artifact@v4
         with: { name: register-watch-apk, path: app/android/app/build/outputs/apk/release/*.apk }
+      - name: Name the APK
+        working-directory: .
+        run: cp app/android/app/build/outputs/apk/release/*.apk ShadiCam-v0.1.${{ github.run_number }}.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Shadi Cam v0.1.${{ github.run_number }} (in development)
+          prerelease: true
+          files: ShadiCam-v0.1.${{ github.run_number }}.apk
+          body: |
+            **Still in development. It may not work correctly.**
+            **هذا التطبيق ما زال قيد التطوير وقد لا يعمل بشكل صحيح.**
+
+            Android only. Install the APK; on first launch enter your Worker address and app key.

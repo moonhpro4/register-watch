@@ -1,0 +1,14 @@
+name: Test AI on staged scenes
+on: workflow_dispatch
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pillow -q
+      - name: Run scenes through the live Worker
+        working-directory: backend
+        env: { BASE: "https://register-watch.opergo.workers.dev", KEY: "${{ secrets.APP_KEY }}" }
+        run: python3 test_ai.py
+      - uses: actions/upload-artifact@v4
+        with: { name: test-scenes, path: backend/scenes }

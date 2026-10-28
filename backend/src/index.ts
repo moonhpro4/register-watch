@@ -7,14 +7,15 @@ const isJpeg = (u: Uint8Array) => u.length > 3 && u[0] === 0xff && u[1] === 0xd8
 const DAY = 86_400_000, FRAME_MS = 30_000, KEEP_FRAMES_MS = 2 * DAY; // one saved picture per camera every 30 s, kept 2 days
 const MAX_IMG = 1_400_000; // D1 rows are limited to 2 MB (base64 adds a third)
 
-// Ask the vision model about a base64 JPEG. If the model's message format differs, only this function changes.
-async function ask(env: Env, imgB64: string, prompt: string) {
+// Ask the vision model about a base64 JPEG. If the model's message format differs, only askText changes.
+async function askText(env: Env, imgB64: string, prompt: string): Promise<string> {
   const r = await env.AI.run(env.AI_MODEL, { messages: [{ role: "user", content: [
     { type: "text", text: prompt }, { type: "image_url", image_url: { url: "data:image/jpeg;base64," + imgB64 } }] }] });
-  const text = r?.response ?? r?.choices?.[0]?.message?.content ?? "";
-  const m = String(text).match(/\{[\s\S]*\}/);
-  try { return m ? JSON.parse(m[0]) : null; } catch { return null; }
+  return String(r?.response ?? r?.choices?.[0]?.message?.content ?? "");
 }
+const parse = (text: string) => { const m = text.match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
+const ask = async (env: Env, imgB64: string, prompt: string) => parse(await askText(env, imgB64, prompt));
+const regPrompt = (z: any) => `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide: "theft" = a person takes money out of the register or drawer into their hand or pocket; "blocked" = something or someone is covering or blocking the register area so it cannot be seen; otherwise "none". Normal sales and customers paying are "none". Reply ONLY JSON: {"event":"theft|blocked|none","confidence":0-1,"note":"short reason"}`;
 
 // A "shift" is one 24-hour recording. Closing it stamps closed_at and starts a new one on the next picture.
 async function closeShift(env: Env, sh: any) {
@@ -56,7 +57,7 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
   const z = JSON.parse(cam.zone);
   let v: any = null;
   try {
-    v = await ask(env, data, `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide: "theft" = a person takes money out of the register or drawer into their hand or pocket; "blocked" = something or someone is covering or blocking the register area so it cannot be seen; otherwise "none". Normal sales and customers paying are "none". Reply ONLY JSON: {"event":"theft|blocked|none","confidence":0-1,"note":"short reason"}`);
+    v = await ask(env, data, regPrompt(z));
   } catch (e) { console.log("ai error", String(e)); }
   if (v && (v.event === "theft" || v.event === "blocked") && v.confidence >= 0.6) {
     const aid = rand();
@@ -73,6 +74,12 @@ export default {
     if (req.headers.get("authorization") !== `Bearer ${env.APP_KEY}`) return json({ error: "unauthorized" }, 401);
     if (p[0] !== "api") return json({ error: "not found" }, 404);
 
+    if (p[1] === "analyze" && req.method === "POST") { // test helper: POST a JPEG, ?x&y&w&h = register box in %
+      const buf = await req.arrayBuffer();
+      if (!isJpeg(new Uint8Array(buf)) || buf.byteLength > MAX_IMG) return json({ error: "jpeg up to 1.4 MB" }, 400);
+      const q = url.searchParams, z = { x: +(q.get("x") || 0), y: +(q.get("y") || 0), w: +(q.get("w") || 100), h: +(q.get("h") || 100) };
+      try { const raw = await askText(env, b64(buf), regPrompt(z)); return json({ raw, parsed: parse(raw) }); } catch (e) { return json({ error: String(e) }, 502); }
+    }
     if (p[1] === "cameras" && !p[2]) {
       if (req.method === "POST") {
         const { store, name } = await req.json<any>(); const id = rand().slice(0, 12), token = rand();

@@ -39,7 +39,7 @@ export default function App() {
 
   if (!loaded) return null;
   if (!cfg) return (
-    <SafeAreaView style={s.app}><Text style={s.h1}>{t("app")}</Text>
+    <SafeAreaView style={s.app}><Text style={s.h1}>{t("app")}</Text><DevBanner />
       <Text>{t("server")}</Text><TextInput style={s.in} autoCapitalize="none" value={f.base} onChangeText={(v) => setF({ ...f, base: v })} placeholder="https://….workers.dev" />
       <Text>{t("key")}</Text><TextInput style={s.in} autoCapitalize="none" secureTextEntry value={f.key} onChangeText={(v) => setF({ ...f, key: v })} />
       <Btn onPress={async () => { await SecureStore.setItemAsync("base", f.base.trim()); await SecureStore.setItemAsync("key", f.key.trim()); setCfg({ base: f.base.trim(), key: f.key.trim() }); }}>{t("save")}</Btn>
@@ -53,7 +53,7 @@ export default function App() {
   const stores = [...new Set(cams.map((c) => c.store))];
   return (
     <SafeAreaView style={s.app}><ScrollView>
-      <Text style={s.h1}>{t("title")}</Text>
+      <Text style={s.h1}>{t("title")}</Text><DevBanner />
       {!cams.length ? (
         <View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn></View>
       ) : (<>
@@ -164,6 +164,11 @@ function Player({ api, cfg, shift, back }) {
     <Btn ghost onPress={back}>{t("back")}</Btn></View>);
 }
 
+function DevBanner() {
+  return (<View style={s.dev}>
+    <Text style={{ fontWeight: "700" }}>This app is still in development and may not work correctly.</Text>
+    <Text style={{ fontWeight: "700", writingDirection: "rtl", textAlign: "right", marginTop: 4 }}>هذا التطبيق ما زال قيد التطوير وقد لا يعمل بشكل صحيح.</Text></View>);
+}
 function PickFolder({ done }) {
   const choose = async () => {
     try {
@@ -175,7 +180,7 @@ function PickFolder({ done }) {
       await SecureStore.setItemAsync("root", dir); done(dir);
     } catch { Alert.alert(t("fail")); }
   };
-  return (<SafeAreaView style={s.app}><Text style={s.h1}>{t("app")}</Text><Text style={s.h2}>{t("pickT")}</Text><Text style={s.mute}>{t("pickD")}</Text>
+  return (<SafeAreaView style={s.app}><Text style={s.h1}>{t("app")}</Text><DevBanner /><Text style={s.h2}>{t("pickT")}</Text><Text style={s.mute}>{t("pickD")}</Text>
     <Btn onPress={choose}>{t("pickB")}</Btn>
     <Btn ghost onPress={async () => { await SecureStore.setItemAsync("root", "skip"); done("skip"); }}>{t("skip")}</Btn></SafeAreaView>);
 }
@@ -250,6 +255,7 @@ async function startWatcher(cfg, root) {
   } catch {}
 }
 const s = StyleSheet.create({
+  dev: { backgroundColor: "#fff3cd", borderRadius: 10, padding: 10, marginVertical: 8, borderWidth: 1, borderColor: "#e0c36a" },
   app: { flex: 1, padding: 16, paddingTop: 48, backgroundColor: "#e9eef2" }, h1: { fontSize: 26, fontWeight: "700", marginBottom: 8 }, h2: { fontSize: 18, fontWeight: "700", marginVertical: 8 },
   mute: { color: "#5d6b78", marginVertical: 6 }, card: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#cfd8df" },
   btn: { backgroundColor: "#17212b", borderRadius: 10, padding: 13, marginTop: 8, alignItems: "center" }, ghost: { backgroundColor: "transparent", borderWidth: 1, borderColor: "#cfd8df" }, bt: { color: "#fff", fontWeight: "700" },

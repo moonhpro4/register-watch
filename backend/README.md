@@ -1,10 +1,9 @@
-# Register Watch backend (all serverless)
+# Register Watch backend (serverless: Worker + D1 + R2)
 1. `wrangler d1 create register-watch`, paste the id into wrangler.toml
 2. `wrangler d1 execute register-watch --remote --file=schema.sql`
-3. `wrangler r2 bucket create register-watch`
+3. `wrangler r2 bucket create register-watch`  (theft pictures and 24-hour recordings live here)
 4. `wrangler secret put APP_KEY`  (long random string; the app sends it as a Bearer token)
-5. Push alerts: in Firebase console create a project, add an Android app with package `com.registerwatch.app`,
-   download `google-services.json` (app) and a service-account key (Project settings > Service accounts > Generate key).
-   Then: `wrangler secret put FCM_SA < service-account.json`
-6. Add GitHub repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GOOGLE_SERVICES_JSON (the file's contents). Run "Deploy backend".
-Recording: each camera keeps one saved picture every 10 s (FRAME_MS) per 24-hour shift in R2. A cron closes shifts and sends the push.
+5. Add repo secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, then run "Deploy backend".
+No R2 access keys are needed: the Worker reaches the bucket through its binding.
+Recording: one saved picture per camera every 10 s (FRAME_MS) per 24-hour shift. A cron closes shifts.
+Alerts: the phone app's background service polls /api/events every 10 s. No Firebase or push service.

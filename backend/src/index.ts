@@ -1,4 +1,4 @@
-export interface Env { DB: D1Database; BUCKET: R2Bucket; AI: any; APP_KEY: string; AI_MODEL: string; FCM_SA: string }
+export interface Env { DB: D1Database; BUCKET: R2Bucket; AI: any; APP_KEY: string; AI_MODEL: string }
 const json = (d: unknown, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
 const rand = () => [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, "0")).join("");
 function b64(buf: ArrayBuffer) { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); }
@@ -14,41 +14,12 @@ async function ask(env: Env, img: ArrayBuffer, prompt: string) {
 }
 
 const DAY = 86_400_000, FRAME_MS = 10_000; // one saved picture per camera every 10 s
-const b64u = (x: string | Uint8Array) => btoa(typeof x === "string" ? x : String.fromCharCode(...x)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 
-// Firebase Cloud Messaging v1 straight from the Worker (no server, no Expo).
-async function fcmAccess(sa: any) {
-  const n = Math.floor(Date.now() / 1000);
-  const h = b64u(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const c = b64u(JSON.stringify({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: n, exp: n + 3600 }));
-  const pem = sa.private_key.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
-  const key = await crypto.subtle.importKey("pkcs8", Uint8Array.from(atob(pem), ch => ch.charCodeAt(0)), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${h}.${c}`)));
-  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${h}.${c}.${b64u(sig)}` });
-  return ((await r.json()) as any).access_token as string;
-}
-
-async function push(env: Env, title: string, body: string, data: Record<string, string>) {
-  if (!env.FCM_SA) return;
-  const { results } = await env.DB.prepare("SELECT token FROM devices").all<{ token: string }>();
-  if (!results.length) return;
-  const sa = JSON.parse(env.FCM_SA), at = await fcmAccess(sa);
-  for (const d of results) {
-    const r = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, { method: "POST",
-      headers: { authorization: `Bearer ${at}`, "content-type": "application/json" },
-      body: JSON.stringify({ message: { token: d.token, notification: { title, body }, data, android: { priority: "HIGH" } } }) });
-    if (r.status === 404 || r.status === 400) await env.DB.prepare("DELETE FROM devices WHERE token=?").bind(d.token).run(); // dead token
-  }
-}
-
-// A "shift" is one 24-hour recording. Closing it sends the "saved, starting a new recording" alert.
+// A "shift" is one 24-hour recording. Closing it stamps closed_at; the app's background service
+// sees that through /api/events and shows the "24 hours saved, new recording started" notice.
 async function closeShift(env: Env, sh: any) {
-  const r = await env.DB.prepare("UPDATE shifts SET ended_at=? WHERE id=? AND ended_at IS NULL").bind(sh.started_at + DAY, sh.id).run();
-  if (!r.meta.changes) return;
-  await env.DB.prepare("UPDATE cameras SET shift_id=NULL WHERE id=? AND shift_id=?").bind(sh.camera_id, sh.id).run();
-  const cam = await env.DB.prepare("SELECT store,name FROM cameras WHERE id=?").bind(sh.camera_id).first<any>();
-  await push(env, `${cam?.store ?? ""}: ${cam?.name ?? ""}`, "24 hours saved. Starting a new recording. / تم حفظ 24 ساعة. بدء تسجيل جديد.", { type: "shift", shiftId: sh.id });
+  const r = await env.DB.prepare("UPDATE shifts SET ended_at=?, closed_at=? WHERE id=? AND ended_at IS NULL").bind(sh.started_at + DAY, Date.now(), sh.id).run();
+  if (r.meta.changes) await env.DB.prepare("UPDATE cameras SET shift_id=NULL WHERE id=? AND shift_id=?").bind(sh.camera_id, sh.id).run();
 }
 async function currentShift(env: Env, cam: any, now: number): Promise<string> {
   if (cam.shift_id) {
@@ -88,7 +59,6 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
     const aid = rand(), key = `alerts/${aid}.jpg`;
     await env.BUCKET.put(key, buf);
     await env.DB.prepare("INSERT INTO alerts VALUES(?,?,?,?,?,?)").bind(aid, id, v.event, v.note ?? "", key, now).run();
-    await push(env, `${cam.store}: ${cam.name}`, v.note || v.event, { alertId: aid, cameraId: id });
   }
   return json({ ok: true });
 }
@@ -144,8 +114,12 @@ export default {
       const o = sh && (await env.BUCKET.get(`frames/${sh.camera_id}/${p[2]}/${Number(p[4])}.jpg`));
       return o ? new Response(o.body, { headers: { "content-type": "image/jpeg" } }) : json({ error: "not found" }, 404);
     }
-    if (p[1] === "devices" && req.method === "POST") {
-      const { token } = await req.json<any>(); await env.DB.prepare("INSERT OR IGNORE INTO devices VALUES(?)").bind(token).run(); return json({ ok: true });
+    if (p[1] === "events") {
+      const since = Number(url.searchParams.get("since") || 0);
+      const a = await env.DB.prepare("SELECT a.note,a.kind,a.created_at ts,c.store,c.name FROM alerts a JOIN cameras c ON c.id=a.camera_id WHERE a.created_at>? ORDER BY ts LIMIT 50").bind(since).all<any>();
+      const h = await env.DB.prepare("SELECT s.closed_at ts,c.store,c.name FROM shifts s JOIN cameras c ON c.id=s.camera_id WHERE s.closed_at>? ORDER BY ts LIMIT 50").bind(since).all<any>();
+      return json([...a.results.map(x => ({ type: "theft", title: `${x.store}: ${x.name}`, body: x.note || x.kind, ts: x.ts })),
+        ...h.results.map(x => ({ type: "shift", title: `${x.store}: ${x.name}`, body: "", ts: x.ts }))].sort((x, y) => x.ts - y.ts));
     }
     if (p[1] === "alerts" && !p[2]) {
       const cam = url.searchParams.get("camera");

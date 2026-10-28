@@ -1,6 +1,6 @@
 {
  "expo": {
-  "name": "Register Watch",
+  "name": "Shadi Cam",
   "slug": "register-watch",
   "version": "1.0.0",
   "orientation": "portrait",
@@ -29,6 +29,9 @@
      }
     }
    ]
-  ]
+  ],
+  "locales": {
+   "ar": "./locales/ar.json"
+  }
  }
 }

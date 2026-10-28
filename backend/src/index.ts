@@ -118,8 +118,8 @@ export default {
     }
     if (p[1] === "events") {
       const since = Number(url.searchParams.get("since") || 0);
-      const a = await env.DB.prepare("SELECT a.note,a.kind,a.created_at ts,c.store,c.name FROM alerts a JOIN cameras c ON c.id=a.camera_id WHERE a.created_at>? ORDER BY ts LIMIT 50").bind(since).all<any>();
-      return json(a.results.map(x => ({ type: x.kind, title: `${x.store}: ${x.name}`, body: x.note || "", ts: x.ts })));
+      const a = await env.DB.prepare("SELECT a.id,a.note,a.kind,a.created_at ts,c.store,c.name FROM alerts a JOIN cameras c ON c.id=a.camera_id WHERE a.created_at>? ORDER BY ts LIMIT 50").bind(since).all<any>();
+      return json(a.results.map(x => ({ id: x.id, type: x.kind, title: `${x.store}: ${x.name}`, body: x.note || "", ts: x.ts })));
     }
     if (p[1] === "alerts" && !p[2]) {
       const cam = url.searchParams.get("camera");

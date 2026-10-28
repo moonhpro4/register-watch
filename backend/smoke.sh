@@ -30,7 +30,7 @@ chk "empty scene raises no alert" "$(curl -s "${H[@]}" "$B/api/events?since=0" |
 sh=$(curl -s "${H[@]}" "$B/api/cameras/$ID/shifts"); echo "::notice::shifts -> $sh"
 SID=$(echo "$sh"|python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])" 2>/dev/null)
 fl=$(curl -s "${H[@]}" "$B/api/shifts/$SID/frames"); TS=$(echo "$fl"|python3 -c "import sys,json;print(json.load(sys.stdin)[0])" 2>/dev/null)
-[ -n "$TS" ] && ok "24h recording saved frames to R2 ($fl)" || bad "no frames: $fl"
+[ -n "$TS" ] && ok "24h recording saved frames in the database ($fl)" || bad "no frames: $fl"
 chk "recorded frame playable" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" "$B/api/shifts/$SID/frame/$TS")" 200
 curl -s -X DELETE "${H[@]}" "$B/api/cameras/$ID" >/dev/null && ok "test camera cleaned up"
 exit $fail

@@ -16,6 +16,8 @@ jobs:
       - run: npm install
       - run: npx expo install --fix
       - run: npx expo prebuild --platform android --no-install
+      - name: Pin androidx.core (needed by background service library)
+        run: echo 'allprojects { configurations.all { resolutionStrategy.force "androidx.core:core:1.13.1", "androidx.core:core-ktx:1.13.1" } }' >> android/build.gradle
       - name: Gradle build
         shell: bash
         run: |

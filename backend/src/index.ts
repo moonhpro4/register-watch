@@ -54,8 +54,11 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
   if (!cam.zone || now - cam.last_ai < 10_000) return json({ ok: true });
   await env.DB.prepare("UPDATE cameras SET last_ai=? WHERE id=?").bind(now, id).run();
   const z = JSON.parse(cam.zone);
-  const v = await ask(env, buf, `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Reply ONLY JSON: {"event":"none|drawer_open|hand_in_drawer|item_taken|covered","confidence":0-1,"note":"short"}`);
-  if (v && v.event !== "none" && v.confidence >= 0.6) {
+  let v: any = null;
+  try {
+    v = await ask(env, buf, `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide: "theft" = a person takes money out of the register or drawer into their hand or pocket; "blocked" = something or someone is covering or blocking the register area so it cannot be seen; otherwise "none". Normal sales and customers paying are "none". Reply ONLY JSON: {"event":"theft|blocked|none","confidence":0-1,"note":"short reason"}`);
+  } catch (e) { console.log("ai error", String(e)); }
+  if (v && (v.event === "theft" || v.event === "blocked") && v.confidence >= 0.6) {
     const aid = rand(), key = `alerts/${aid}.jpg`;
     await env.BUCKET.put(key, buf);
     await env.DB.prepare("INSERT INTO alerts VALUES(?,?,?,?,?,?)").bind(aid, id, v.event, v.note ?? "", key, now).run();
@@ -80,6 +83,12 @@ export default {
       const { results } = await env.DB.prepare("SELECT id,store,name,zone,verified_at FROM cameras ORDER BY store").all();
       return json(results.map((c: any) => ({ ...c, zone: c.zone ? JSON.parse(c.zone) : null, verified: !!c.verified_at })));
     }
+    if (p[1] === "cameras" && p[2] && !p[3] && req.method === "DELETE") {
+      for (const q of ["DELETE FROM alerts WHERE camera_id=?", "DELETE FROM shifts WHERE camera_id=?", "DELETE FROM cameras WHERE id=?"]) await env.DB.prepare(q).bind(p[2]).run();
+      for (let i = 0; i < 5; i++) { const l: any = await env.BUCKET.list({ prefix: `frames/${p[2]}/`, limit: 1000 }); if (!l.objects.length) break; await env.BUCKET.delete(l.objects.map((o: any) => o.key)); }
+      await env.BUCKET.delete(`latest/${p[2]}.jpg`);
+      return json({ ok: true });
+    }
     if (p[1] === "cameras" && p[3] === "zone" && req.method === "PUT") {
       const { zone } = await req.json<any>();
       await env.DB.prepare("UPDATE cameras SET zone=? WHERE id=?").bind(zone ? JSON.stringify(zone) : null, p[2]).run();
@@ -88,7 +97,8 @@ export default {
     if (p[1] === "cameras" && p[3] === "find-register" && req.method === "POST") {
       const o = await env.BUCKET.get(`latest/${p[2]}.jpg`);
       if (!o) return json({ error: "no picture yet" }, 409);
-      const v = await ask(env, await o.arrayBuffer(), `Find the cash register in this image. Reply ONLY JSON {"found":true|false,"x":0-100,"y":0-100,"w":0-100,"h":0-100} as percentages of image width/height.`);
+      let v: any;
+      try { v = await ask(env, await o.arrayBuffer(), `Find the cash register in this image. Reply ONLY JSON {"found":true|false,"x":0-100,"y":0-100,"w":0-100,"h":0-100} as percentages of image width/height.`); } catch (e) { return json({ error: "ai: " + String(e) }, 502); }
       return json(v?.found ? { zone: { x: v.x, y: v.y, w: v.w, h: v.h } } : { zone: null });
     }
     if (p[1] === "cameras" && p[3] === "latest") {
@@ -117,9 +127,7 @@ export default {
     if (p[1] === "events") {
       const since = Number(url.searchParams.get("since") || 0);
       const a = await env.DB.prepare("SELECT a.note,a.kind,a.created_at ts,c.store,c.name FROM alerts a JOIN cameras c ON c.id=a.camera_id WHERE a.created_at>? ORDER BY ts LIMIT 50").bind(since).all<any>();
-      const h = await env.DB.prepare("SELECT s.closed_at ts,c.store,c.name FROM shifts s JOIN cameras c ON c.id=s.camera_id WHERE s.closed_at>? ORDER BY ts LIMIT 50").bind(since).all<any>();
-      return json([...a.results.map(x => ({ type: "theft", title: `${x.store}: ${x.name}`, body: x.note || x.kind, ts: x.ts })),
-        ...h.results.map(x => ({ type: "shift", title: `${x.store}: ${x.name}`, body: "", ts: x.ts }))].sort((x, y) => x.ts - y.ts));
+      return json(a.results.map(x => ({ type: x.kind, title: `${x.store}: ${x.name}`, body: x.note || "", ts: x.ts })));
     }
     if (p[1] === "alerts" && !p[2]) {
       const cam = url.searchParams.get("camera");

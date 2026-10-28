@@ -1,12 +1,32 @@
-name: Deploy backend (manual)
+name: Deploy backend
 on: workflow_dispatch
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          workingDirectory: backend
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Create D1 database and R2 bucket
+        run: |
+          getid(){ npx wrangler@3 d1 list --json | python3 -c "import sys,json;print(next((d['uuid'] for d in json.load(sys.stdin) if d['name']=='register-watch'),''))"; }
+          ID=$(getid)
+          if [ -z "$ID" ]; then npx wrangler@3 d1 create register-watch; ID=$(getid); fi
+          [ -n "$ID" ] || { echo "::error::could not get D1 id"; exit 1; }
+          sed -i "s/PUT_YOUR_D1_ID_HERE/$ID/" wrangler.toml
+          npx wrangler@3 r2 bucket create register-watch || echo "bucket exists or R2 error above"
+      - run: npx wrangler@3 d1 execute register-watch --remote --file=schema.sql
+      - run: npx wrangler@3 deploy
+      - name: Set app key
+        run: printf %s "${{ secrets.APP_KEY }}" | npx wrangler@3 secret put APP_KEY
+      - name: Find Worker address
+        run: |
+          SUB=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['subdomain'])")
+          echo "URL=https://register-watch.$SUB.workers.dev" >> $GITHUB_ENV
+          echo "::notice::WORKER_URL=https://register-watch.$SUB.workers.dev"
+      - name: Live test
+        run: BASE=$URL KEY="${{ secrets.APP_KEY }}" bash smoke.sh

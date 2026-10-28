@@ -8,8 +8,8 @@ Notifications.setNotificationHandler({ handleNotification: async () => ({ should
 
 const ar = getLocales()[0]?.languageCode === "ar";
 const D = {
-  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", n24: "24 hours saved. Starting a new recording.", theft: "Possible theft at the register", svc: "Watching your cameras", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
-  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", n24: "تم حفظ 24 ساعة. بدء تسجيل جديد.", theft: "احتمال سرقة عند الصندوق", svc: "مراقبة الكاميرات", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
+  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", n24: "24 hours saved. Starting a new recording.", theft: "Possible theft at the register", svc: "Watching your cameras", camAddr: "Camera address (optional)", bad: "That address isn’t valid. Use http://… or rtsp://…", down: "Can’t reach this address. It may be fake or wrong, or you may be away from the store’s Wi‑Fi.", downBtn: "Add anyway", blocked: "Someone is blocking the register", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
+  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", n24: "تم حفظ 24 ساعة. بدء تسجيل جديد.", theft: "احتمال سرقة عند الصندوق", svc: "مراقبة الكاميرات", camAddr: "عنوان الكاميرا (اختياري)", bad: "العنوان غير صالح. استخدم http://… أو rtsp://…", down: "تعذّر الوصول إلى هذا العنوان. قد يكون مزيفًا أو خاطئًا، أو أنك بعيد عن شبكة المتجر.", downBtn: "إضافة على أي حال", blocked: "شخص يحجب الصندوق", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
 };
 const t = (k) => D[ar ? "ar" : "en"][k];
 const Btn = ({ children, onPress, ghost }) => (
@@ -62,12 +62,31 @@ export default function App() {
     </ScrollView></SafeAreaView>);
 }
 
+// Pings the address the owner typed. Any HTTP answer (even 401) means something real is there.
+async function pingAddress(addr) {
+  const m = addr.trim().match(/^(https?|rtsp):\/\/(?:[^@\/]*@)?([^\/:?#]+)(?::(\d+))?/i);
+  if (!m) return "bad";
+  const sc = m[1].toLowerCase(), url = sc === "rtsp" ? `http://${m[2]}` : `${sc}://${m[2]}${m[3] ? ":" + m[3] : ""}`;
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 6000);
+  try { await fetch(url, { signal: ctl.signal }); return "ok"; } catch { return "down"; } finally { clearTimeout(to); }
+}
 function AddCam({ api, done, back }) {
-  const [st, setSt] = useState(""), [nm, setNm] = useState("");
+  const [st, setSt] = useState(""), [nm, setNm] = useState(""), [ad, setAd] = useState(""), [busy, setBusy] = useState(false);
+  const create = async () => { const r = await api("/api/cameras", { method: "POST", body: JSON.stringify({ store: st.trim() || "—", name: nm.trim() }) }); done({ id: r.id, uploadUrl: r.uploadUrl }); };
+  const submit = async () => {
+    if (!nm.trim()) return;
+    if (ad.trim()) {
+      setBusy(true); const res = await pingAddress(ad); setBusy(false);
+      if (res === "bad") return Alert.alert(t("bad"));
+      if (res === "down") return Alert.alert(t("down"), "", [{ text: t("cancel"), style: "cancel" }, { text: t("downBtn"), onPress: create }]);
+    }
+    create();
+  };
   return (<SafeAreaView style={s.app}>
     <Text>{t("store")}</Text><TextInput style={s.in} value={st} onChangeText={setSt} />
     <Text>{t("cname")}</Text><TextInput style={s.in} value={nm} onChangeText={setNm} />
-    <Btn onPress={async () => { if (!nm.trim()) return; const r = await api("/api/cameras", { method: "POST", body: JSON.stringify({ store: st.trim() || "—", name: nm.trim() }) }); done({ id: r.id, uploadUrl: r.uploadUrl }); }}>{t("create")}</Btn>
+    <Text>{t("camAddr")}</Text><TextInput style={s.in} autoCapitalize="none" value={ad} onChangeText={setAd} placeholder="rtsp://192.168.1.20/…" />
+    <Btn onPress={submit}>{busy ? "…" : t("create")}</Btn>
     <Btn ghost onPress={back}>{t("cancel")}</Btn></SafeAreaView>);
 }
 
@@ -151,7 +170,7 @@ async function watchTask({ base, key }) {
       const r = await fetch(base.replace(/\/$/, "") + "/api/events?since=" + since, { headers: { authorization: "Bearer " + key } });
       for (const e of await r.json()) {
         since = Math.max(since, e.ts);
-        await Notifications.scheduleNotificationAsync({ content: { title: e.title, body: e.type === "shift" ? t("n24") : e.body || t("theft") }, trigger: { channelId: "alerts" } });
+        await Notifications.scheduleNotificationAsync({ content: { title: e.title, body: e.body || (e.type === "blocked" ? t("blocked") : t("theft")) }, trigger: { channelId: "alerts" } });
       }
     } catch {}
     await sleep(10000);

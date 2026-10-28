@@ -20,7 +20,15 @@
    "expo-secure-store",
    "expo-localization",
    "expo-asset",
-   "expo-notifications"
+   "expo-notifications",
+   [
+    "expo-build-properties",
+    {
+     "android": {
+      "usesCleartextTraffic": true
+     }
+    }
+   ]
   ]
  }
 }

@@ -18,7 +18,9 @@ jobs:
           if [ -z "$ID" ]; then npx wrangler@3 d1 create register-watch; ID=$(getid); fi
           [ -n "$ID" ] || { echo "::error::could not get D1 id"; exit 1; }
           sed -i "s/PUT_YOUR_D1_ID_HERE/$ID/" wrangler.toml
-          npx wrangler@3 r2 bucket create register-watch || echo "bucket exists or R2 error above"
+          npx wrangler@3 r2 bucket create register-watch > r2.log 2>&1; grep -v '^$' r2.log | tail -8 | while IFS= read -r l; do echo "::warning::R2 create: ${l:0:200}"; done
+          npx wrangler@3 r2 bucket list > r2list.log 2>&1; grep -E "^name:" r2list.log | while IFS= read -r l; do echo "::notice::R2 bucket in account -> $l"; done
+          grep -v '^$' r2list.log | tail -4 | while IFS= read -r l; do echo "::warning::R2 list: ${l:0:200}"; done
       - run: npx wrangler@3 d1 execute register-watch --remote --file=schema.sql
       - name: Deploy Worker
         run: |

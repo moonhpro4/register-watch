@@ -3,3 +3,4 @@ android
 ios
 .expo
 dist
+google-services.json

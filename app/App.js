@@ -3,12 +3,12 @@ import { View, Text, TextInput, Pressable, ScrollView, Image, PanResponder, Styl
 import * as SecureStore from "expo-secure-store";
 import { getLocales } from "expo-localization";
 import * as Notifications from "expo-notifications";
-import Constants from "expo-constants";
+Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
 const ar = getLocales()[0]?.languageCode === "ar";
 const D = {
-  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
-  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
+  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
+  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
 };
 const t = (k) => D[ar ? "ar" : "en"][k];
 const Btn = ({ children, onPress, ghost }) => (
@@ -98,7 +98,7 @@ function Cam({ api, cfg, cam, reload, back }) {
   return (<SafeAreaView style={s.app}><ScrollView>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Pressable onPress={back}><Text style={{ fontSize: 18 }}>{t("back")}</Text></Pressable><Text style={s.h2}>{cam.name}</Text></View>
     <View style={{ flexDirection: "row", gap: 8, marginVertical: 8 }}>
-      {["live", "thefts"].map((k) => <Pressable key={k} onPress={() => setTab(k)} style={[s.tab, tab === k && s.tabOn]}><Text>{t(k)}</Text></Pressable>)}</View>
+      {["live", "shifts", "thefts"].map((k) => <Pressable key={k} onPress={() => setTab(k)} style={[s.tab, tab === k && s.tabOn]}><Text>{t(k)}</Text></Pressable>)}</View>
     {tab === "live" && (<>
       <View style={s.scene} onLayout={(e) => (size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} {...(edit ? pan.panHandlers : {})}>
         <Image source={{ uri: `${cfg.base.replace(/\/$/, "")}/api/cameras/${cam.id}/latest?t=${Date.now()}`, headers: hdr }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -106,17 +106,46 @@ function Cam({ api, cfg, cam, reload, back }) {
       {edit ? (<><Text style={s.mute}>{t("drag")}</Text><Btn onPress={() => tmp && putZone(tmp)}>{t("saveArea")}</Btn><Btn ghost onPress={() => { setEdit(false); setTmp(null); }}>{t("cancel")}</Btn></>) : (<>
         {!cam.zone && <Text style={s.mute}>{t("noreg")}</Text>}
         <Btn onPress={find}>{t("find")}</Btn><Btn ghost onPress={() => setEdit(true)}>{t("mark")}</Btn>{cam.zone && <Btn ghost onPress={() => putZone(null)}>{t("remove")}</Btn>}</>)}</>)}
+    {tab === "shifts" && <Shifts api={api} cfg={cfg} cam={cam} />}
     {tab === "thefts" && (alerts.length ? alerts.map((a) => (
       <View key={a.id} style={s.card}><Image source={{ uri: `${cfg.base.replace(/\/$/, "")}/api/alerts/${a.id}/image`, headers: hdr }} style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 8 }} />
         <Text style={{ fontWeight: "700", marginTop: 6 }}>{a.note || a.kind}</Text><Text style={s.mute}>{new Date(a.created_at).toLocaleString(ar ? "ar" : "en")}</Text></View>)) : <Text style={s.mute}>{t("nothing")}</Text>)}
   </ScrollView></SafeAreaView>);
 }
 
+function Shifts({ api, cfg, cam }) {
+  const [list, setList] = useState([]), [sel, setSel] = useState(null);
+  useEffect(() => { api(`/api/cameras/${cam.id}/shifts`).then(setList).catch(() => {}); }, []);
+  if (sel) return <Player api={api} cfg={cfg} shift={sel} back={() => setSel(null)} />;
+  if (!list.length) return <Text style={s.mute}>{t("noshifts")}</Text>;
+  return list.map((x) => (
+    <View key={x.id} style={s.card}>
+      <Text style={{ fontWeight: "700" }}>{new Date(x.started_at).toLocaleString(ar ? "ar" : "en")}</Text>
+      <Text style={s.mute}>{x.ended_at ? "✅ " + t("savedv") : "● " + t("recording")} · {x.frames} {t("frames")}</Text>
+      <Btn ghost onPress={() => setSel(x)}>{t("play")}</Btn></View>));
+}
+
+// Plays the shift's saved pictures like a fast time-lapse (5 pictures per second).
+function Player({ api, cfg, shift, back }) {
+  const [ts, setTs] = useState([]), [i, setI] = useState(0), [on, setOn] = useState(false);
+  useEffect(() => { api(`/api/shifts/${shift.id}/frames`).then(setTs).catch(() => {}); }, []);
+  useEffect(() => { if (!on) return; const h = setInterval(() => setI((v) => Math.min(v + 1, ts.length - 1)), 200); return () => clearInterval(h); }, [on, ts.length]);
+  const cur = ts[i];
+  return (<View>
+    <View style={s.scene}>{cur && <Image source={{ uri: `${cfg.base.replace(/\/$/, "")}/api/shifts/${shift.id}/frame/${cur}`, headers: { Authorization: "Bearer " + cfg.key } }} style={StyleSheet.absoluteFill} resizeMode="cover" />}</View>
+    <Text style={s.mute}>{cur ? new Date(cur).toLocaleString(ar ? "ar" : "en") : ""}</Text>
+    <View style={{ flexDirection: "row", gap: 8 }}>
+      <View style={{ flex: 1 }}><Btn ghost onPress={() => setI((v) => Math.max(0, v - 30))}>{t("back5")}</Btn></View>
+      <View style={{ flex: 1 }}><Btn onPress={() => setOn(!on)}>{on ? t("pause") : t("play")}</Btn></View>
+      <View style={{ flex: 1 }}><Btn ghost onPress={() => setI((v) => Math.min(ts.length - 1, v + 30))}>{t("fwd5")}</Btn></View></View>
+    <Btn ghost onPress={back}>{t("back")}</Btn></View>);
+}
+
+// Native FCM token (no Expo push service): the Worker sends to Firebase directly.
 async function registerPush(api) {
   try {
-    const pid = Constants.expoConfig?.extra?.eas?.projectId; if (!pid) return;
     const p = await Notifications.requestPermissionsAsync(); if (!p.granted) return;
-    const tok = (await Notifications.getExpoPushTokenAsync({ projectId: pid })).data;
+    const tok = (await Notifications.getDevicePushTokenAsync()).data;
     await api("/api/devices", { method: "POST", body: JSON.stringify({ token: tok }) });
   } catch {}
 }

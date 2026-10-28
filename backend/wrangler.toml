@@ -16,3 +16,6 @@ bucket_name = "register-watch"
 
 [vars]
 AI_MODEL = "@cf/google/gemma-4-26b-a4b-it"
+
+[triggers]
+crons = ["*/15 * * * *"]

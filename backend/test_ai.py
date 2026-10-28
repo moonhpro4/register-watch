@@ -40,14 +40,14 @@ res = []
 for name, im in scenes().items():
     im.save(f"scenes/{name}.jpg", quality=85); buf = io.BytesIO(); im.save(buf, "JPEG", quality=85)
     req = urllib.request.Request(os.environ["BASE"] + "/api/analyze?x=44&y=40&w=24&h=26", data=buf.getvalue(), method="POST",
-        headers={"authorization": "Bearer " + os.environ["KEY"], "content-type": "image/jpeg"})
+        headers={"authorization": "Bearer " + os.environ["KEY"], "content-type": "image/jpeg", "user-agent": "Mozilla/5.0 ShadiCamTest"})
     try: r = json.load(urllib.request.urlopen(req, timeout=90))
     except Exception as e: r = {"error": str(e)[:120]}
     pv = r.get("parsed") or {}; ev = pv.get("event", "?"); cf = pv.get("confidence", 0)
     want = name.split("_")[0]
     alert = ev in ("theft", "blocked") and (cf or 0) >= 0.6
     got = ev if alert else "none"
-    ok = "PASS" if got == want else "MISS"
+    ok = "ERROR" if ("error" in r or not pv) else ("PASS" if got == want else "MISS")
     res.append(f"{ok} {name}: expected {want}, AI said {ev} ({cf}) - {str(pv.get('note', r.get('error', r.get('raw', ''))))[:110]}")
 msg = "%0A".join(res)
 print("::notice::AI scene test%0A" + msg)

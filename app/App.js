@@ -5,12 +5,13 @@ import { getLocales } from "expo-localization";
 import * as Notifications from "expo-notifications";
 import BackgroundService from "react-native-background-actions";
 import * as FileSystem from "expo-file-system";
+import { isapi, digestHeaders, parseDevice, parseChannels } from "./hik";
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
 const ar = getLocales()[0]?.languageCode === "ar";
 const D = {
-  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", n24: "24 hours saved. Starting a new recording.", theft: "Possible theft at the register", svc: "Watching your cameras", camAddr: "Camera address (optional)", bad: "That address isn’t valid. Use http://… or rtsp://…", down: "Can’t reach this address. It may be fake or wrong, or you may be away from the store’s Wi‑Fi.", downBtn: "Add anyway", blocked: "Someone is blocking the register", app: "Shadi Cam", pickT: "Where should recordings be saved?", pickD: "Choose a folder on your phone (for example Documents). The app creates a folder called “Shadi Cam” inside it and saves every recording and theft picture there. Nothing is deleted from your phone.", pickB: "Choose folder", skip: "Skip", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
-  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", n24: "تم حفظ 24 ساعة. بدء تسجيل جديد.", theft: "احتمال سرقة عند الصندوق", svc: "مراقبة الكاميرات", camAddr: "عنوان الكاميرا (اختياري)", bad: "العنوان غير صالح. استخدم http://… أو rtsp://…", down: "تعذّر الوصول إلى هذا العنوان. قد يكون مزيفًا أو خاطئًا، أو أنك بعيد عن شبكة المتجر.", downBtn: "إضافة على أي حال", blocked: "شخص يحجب الصندوق", app: "كمرت شادي", pickT: "أين تريد حفظ التسجيلات؟", pickD: "اختر مجلدًا على هاتفك (مثل Documents). سينشئ التطبيق بداخله مجلدًا باسم «Shadi Cam» ويحفظ فيه كل تسجيل وكل صورة سرقة. لا يتم حذف أي شيء من هاتفك.", pickB: "اختيار المجلد", skip: "تخطي", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
+  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", n24: "24 hours saved. Starting a new recording.", theft: "Possible theft at the register", svc: "Watching your cameras", camAddr: "Camera address (optional)", bad: "That address isn’t valid. Use http://… or rtsp://…", down: "Can’t reach this address. It may be fake or wrong, or you may be away from the store’s Wi‑Fi.", downBtn: "Add anyway", blocked: "Someone is blocking the register", app: "Shadi Cam", pickT: "Where should recordings be saved?", pickD: "Choose a folder on your phone (for example Documents). The app creates a folder called “Shadi Cam” inside it and saves every recording and theft picture there. Nothing is deleted from your phone.", pickB: "Choose folder", skip: "Skip", addNvr: "Add Hikvision NVR / DVR", nvrHint: "Your phone must be on the same Wi‑Fi as the NVR. Leave it at the store: it sends the pictures to the cloud. Hik-Connect keeps working as usual. Tip: create a separate NVR user with only live view permission instead of using admin.", host: "NVR address (IP)", port: "Port", user: "Username", pass: "Password", connect: "Connect", found: "Connected", chansT: "Cameras found (tap to choose)", addSel: "Add selected cameras", badPass: "Wrong username or password.", notHik: "This doesn’t look like a Hikvision device.", noReach: "Can’t reach the NVR. Check the address, and that this phone is on the same Wi‑Fi as the NVR.", sha: "This NVR uses a login type the app doesn’t support yet (SHA‑256). In the NVR’s network settings, set web authentication to digest/basic.", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
+  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", n24: "تم حفظ 24 ساعة. بدء تسجيل جديد.", theft: "احتمال سرقة عند الصندوق", svc: "مراقبة الكاميرات", camAddr: "عنوان الكاميرا (اختياري)", bad: "العنوان غير صالح. استخدم http://… أو rtsp://…", down: "تعذّر الوصول إلى هذا العنوان. قد يكون مزيفًا أو خاطئًا، أو أنك بعيد عن شبكة المتجر.", downBtn: "إضافة على أي حال", blocked: "شخص يحجب الصندوق", app: "كمرت شادي", pickT: "أين تريد حفظ التسجيلات؟", pickD: "اختر مجلدًا على هاتفك (مثل Documents). سينشئ التطبيق بداخله مجلدًا باسم «Shadi Cam» ويحفظ فيه كل تسجيل وكل صورة سرقة. لا يتم حذف أي شيء من هاتفك.", pickB: "اختيار المجلد", skip: "تخطي", addNvr: "إضافة جهاز تسجيل هيكفيجن (NVR / DVR)", nvrHint: "يجب أن يكون هاتفك على نفس شبكة الواي فاي مع الجهاز. اتركه في المتجر: يرسل الصور إلى السحابة. يستمر تطبيق Hik-Connect بالعمل كالمعتاد. نصيحة: أنشئ مستخدمًا منفصلًا في الجهاز بصلاحية المشاهدة المباشرة فقط بدل admin.", host: "عنوان الجهاز (IP)", port: "المنفذ", user: "اسم المستخدم", pass: "كلمة المرور", connect: "اتصال", found: "تم الاتصال", chansT: "الكاميرات الموجودة (اضغط للاختيار)", addSel: "إضافة الكاميرات المحددة", badPass: "اسم المستخدم أو كلمة المرور خاطئة.", notHik: "هذا لا يبدو جهاز هيكفيجن.", noReach: "تعذّر الوصول إلى الجهاز. تحقق من العنوان ومن أن هذا الهاتف على نفس شبكة الواي فاي.", sha: "هذا الجهاز يستخدم نوع تسجيل دخول غير مدعوم بعد (SHA‑256). في إعدادات الشبكة بالجهاز اجعل التوثيق digest/basic.", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
 };
 const t = (k) => D[ar ? "ar" : "en"][k];
 const Btn = ({ children, onPress, ghost }) => (
@@ -46,6 +47,7 @@ export default function App() {
     </SafeAreaView>);
 
   if (root === "") return <PickFolder done={setRoot} />;
+  if (scr.n === "nvr") return <AddNvr api={api} back={() => setScr({ n: "home" })} done={() => { load(); setScr({ n: "home" }); }} />;
   if (scr.n === "add") return <AddCam api={api} done={(c) => { load(); setScr({ n: "created", c }); }} back={() => setScr({ n: "home" })} />;
   if (scr.n === "created") return <Created api={api} c={scr.c} back={() => { load(); setScr({ n: "home" }); }} />;
   if (scr.n === "cam") return <Cam api={api} cfg={cfg} cam={cams.find((c) => c.id === scr.id)} reload={load} back={() => setScr({ n: "home" })} />;
@@ -55,13 +57,13 @@ export default function App() {
     <SafeAreaView style={s.app}><ScrollView>
       <Text style={s.h1}>{t("title")}</Text><DevBanner />
       {!cams.length ? (
-        <View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn></View>
+        <View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn><Btn ghost onPress={() => setScr({ n: "nvr" })}>+ {t("addNvr")}</Btn></View>
       ) : (<>
         {stores.map((st) => (<View key={st}><Text style={s.h2}>{st}</Text>
           {cams.filter((c) => c.store === st).map((c) => (
             <Pressable key={c.id} style={s.card} onPress={() => setScr({ n: "cam", id: c.id })}>
               <Text style={{ fontWeight: "700" }}>{c.name}</Text><Text style={s.mute}>{c.verified ? "● " + t("verified") : "○ " + t("unverified")}</Text></Pressable>))}</View>))}
-        <Btn ghost onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn></>)}
+        <Btn ghost onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn><Btn ghost onPress={() => setScr({ n: "nvr" })}>+ {t("addNvr")}</Btn></>)}
     </ScrollView></SafeAreaView>);
 }
 
@@ -229,10 +231,82 @@ async function syncToDevice(base, key, root) {
   await saveState(st);
 }
 
+// ---- Hikvision NVR/DVR: the phone (on the store Wi-Fi) fetches snapshots and uploads them to the Worker ----
+const NVRS = FileSystem.documentDirectory + "nvrs.json";
+const pwKey = (h) => "nvrpw_" + String(h).replace(/[^A-Za-z0-9._-]/g, "_");
+async function loadNvrs() {
+  let l = []; try { l = JSON.parse(await FileSystem.readAsStringAsync(NVRS)); } catch {}
+  for (const n of l) n.pass = (await SecureStore.getItemAsync(pwKey(n.host))) || "";
+  return l;
+}
+async function saveNvr(nvr, chans) {
+  const l = (await loadNvrs()).filter((n) => n.host !== nvr.host).map(({ pass, ...r }) => r);
+  l.push({ host: nvr.host, port: nvr.port, user: nvr.user, chans });
+  await SecureStore.setItemAsync(pwKey(nvr.host), nvr.pass);
+  await FileSystem.writeAsStringAsync(NVRS, JSON.stringify(l));
+}
+async function nvrSnapshot(nvr, id) { // prefer the small sub-stream (…02) so uploads stay light
+  const tmp = FileSystem.cacheDirectory + "snap.jpg";
+  for (const pth of [`/ISAPI/Streaming/channels/${id.slice(0, -2)}02/picture`, `/ISAPI/Streaming/channels/${id}/picture`]) {
+    const url = `http://${nvr.host}:${nvr.port || 80}${pth}`;
+    const d = await digestHeaders(url, nvr.user, nvr.pass);
+    const r = await FileSystem.downloadAsync(url, tmp, { headers: d.auth ? { Authorization: d.auth } : {} });
+    const info = await FileSystem.getInfoAsync(tmp);
+    if (r.status === 200 && info.size > 1000 && info.size < 1400000) return tmp;
+  }
+  return null;
+}
+async function bridgeNvrs() {
+  for (const nvr of await loadNvrs()) for (const c of nvr.chans) {
+    try { const f = await nvrSnapshot(nvr, c.id); if (f) await FileSystem.uploadAsync(c.uploadUrl, f, { httpMethod: "POST", uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT, headers: { "content-type": "image/jpeg" } }); } catch {}
+  }
+}
+function AddNvr({ api, back, done }) {
+  const [f, setF] = useState({ host: "", port: "80", user: "", pass: "", store: "" }), [info, setInfo] = useState(null), [sel, setSel] = useState({}), [busy, setBusy] = useState(false);
+  const set = (k) => (v) => setF({ ...f, [k]: v });
+  const connect = async () => {
+    setBusy(true);
+    try {
+      const nvr = { host: f.host.trim(), port: f.port.trim() || "80", user: f.user.trim(), pass: f.pass };
+      const dev = parseDevice(await isapi(nvr, "/ISAPI/System/deviceInfo"));
+      if (!dev.model && !dev.serial) throw new Error("notHik");
+      const chans = parseChannels(await isapi(nvr, "/ISAPI/Streaming/channels"));
+      setInfo({ nvr, dev, chans }); setSel(Object.fromEntries(chans.map((c) => [c.id, true])));
+    } catch (e) { Alert.alert(e.message === "auth" ? t("badPass") : e.message === "notHik" ? t("notHik") : e.message === "sha256" ? t("sha") : t("noReach")); }
+    setBusy(false);
+  };
+  const add = async () => {
+    setBusy(true);
+    try {
+      const chans = [];
+      for (const c of info.chans.filter((x) => sel[x.id])) {
+        const r = await api("/api/cameras", { method: "POST", body: JSON.stringify({ store: f.store.trim() || info.dev.name || "NVR", name: c.name }) });
+        chans.push({ id: c.id, camId: r.id, uploadUrl: r.uploadUrl });
+      }
+      await saveNvr(info.nvr, chans); done();
+    } catch { Alert.alert(t("fail")); }
+    setBusy(false);
+  };
+  return (<SafeAreaView style={s.app}><ScrollView>
+    <Text style={s.h2}>{t("addNvr")}</Text><Text style={s.mute}>{t("nvrHint")}</Text>
+    {!info ? (<>
+      <Text>{t("host")}</Text><TextInput style={s.in} autoCapitalize="none" keyboardType="numbers-and-punctuation" value={f.host} onChangeText={set("host")} placeholder="192.168.1.64" />
+      <Text>{t("port")}</Text><TextInput style={s.in} keyboardType="number-pad" value={f.port} onChangeText={set("port")} />
+      <Text>{t("user")}</Text><TextInput style={s.in} autoCapitalize="none" value={f.user} onChangeText={set("user")} />
+      <Text>{t("pass")}</Text><TextInput style={s.in} autoCapitalize="none" secureTextEntry value={f.pass} onChangeText={set("pass")} />
+      <Btn onPress={connect}>{busy ? "…" : t("connect")}</Btn></>) : (<>
+      <Text style={{ fontWeight: "700" }}>✅ {t("found")}: {info.dev.model} · {info.dev.serial}</Text>
+      <Text>{t("store")}</Text><TextInput style={s.in} value={f.store} onChangeText={set("store")} placeholder={info.dev.name} />
+      <Text style={s.h2}>{t("chansT")}</Text>
+      {info.chans.map((c) => (<Pressable key={c.id} style={s.card} onPress={() => setSel({ ...sel, [c.id]: !sel[c.id] })}><Text>{sel[c.id] ? "☑ " : "☐ "}{c.name}</Text></Pressable>))}
+      <Btn onPress={add}>{busy ? "…" : t("addSel")}</Btn></>)}
+    <Btn ghost onPress={back}>{t("back")}</Btn></ScrollView></SafeAreaView>);
+}
+
 // Android foreground service: alerts, plus copying every recording to the phone, one step at a time.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function watchTask({ base, key, root }) {
-  base = base.replace(/\/$/, ""); let since = Date.now(), lastSync = 0; const saving = root && root !== "skip";
+  base = base.replace(/\/$/, ""); let since = Date.now(), lastSync = 0, lastBridge = 0; const saving = root && root !== "skip";
   while (BackgroundService.isRunning()) {
     try {
       const r = await fetch(base + "/api/events?since=" + since, { headers: { authorization: "Bearer " + key } });
@@ -242,6 +316,7 @@ async function watchTask({ base, key, root }) {
         if (saving) { try { await saveAlert(base, key, root, e); } catch {} }
       }
     } catch {}
+    if (Date.now() - lastBridge > 30000) { lastBridge = Date.now(); try { await bridgeNvrs(); } catch {} }
     if (saving && Date.now() - lastSync > 60000) { lastSync = Date.now(); try { await syncToDevice(base, key, root); } catch {} }
     await sleep(10000);
   }

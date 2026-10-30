@@ -28,7 +28,8 @@
       "usesCleartextTraffic": true
      }
     }
-   ]
+   ],
+   "./plugins/withFgs"
   ],
   "locales": {
    "ar": "./locales/ar.json"

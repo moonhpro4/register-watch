@@ -20,5 +20,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0"
+  },
+  "scripts": {
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   }
 }

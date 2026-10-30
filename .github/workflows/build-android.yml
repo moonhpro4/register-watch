@@ -16,6 +16,14 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - run: npm install
       - run: npx expo install --fix
+      - name: Patch background-actions to support the specialUse service type (Android 14+)
+        run: |
+          python3 - <<'PY'
+          p = "node_modules/react-native-background-actions/android/src/main/java/com/asterinet/react/bgactions/BackgroundTaskOptions.java"
+          s = open(p).read(); old = '            case "dataSync":'; assert old in s
+          s = s.replace(old, '            case "specialUse":\n                return Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0;\n' + old, 1)
+          open(p, "w").write(s)
+          PY
       - run: npx expo prebuild --platform android --no-install
       - name: Pin androidx.core (needed by background service library)
         run: echo 'allprojects { configurations.all { resolutionStrategy.force "androidx.core:core:1.13.1", "androidx.core:core-ktx:1.13.1" } }' >> android/build.gradle

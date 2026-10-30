@@ -32,5 +32,9 @@ SID=$(echo "$sh"|python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id']
 fl=$(curl -s "${H[@]}" "$B/api/shifts/$SID/frames"); TS=$(echo "$fl"|python3 -c "import sys,json;print(json.load(sys.stdin)[0])" 2>/dev/null)
 [ -n "$TS" ] && ok "24h recording saved frames in the database ($fl)" || bad "no frames: $fl"
 chk "recorded frame playable" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" "$B/api/shifts/$SID/frame/$TS")" 200
+st=$(curl -s "${H[@]}" "$B/api/selftest"); echo "::notice::selftest -> $st"
+case "$st" in *'"md5":true'*) ok "Worker MD5 works";; *) bad "Worker MD5: $st";; esac
+case "$st" in *'"token":true'*) ok "login tokens sign and verify";; *) bad "token: $st";; esac
+case "$st" in *'"hik":'[0-9]*) ok "Worker reached the real Hik-Connect and got a normal answer";; *) bad "Worker -> Hik-Connect: $st";; esac
 curl -s -X DELETE "${H[@]}" "$B/api/cameras/$ID" >/dev/null && ok "test camera cleaned up"
 exit $fail

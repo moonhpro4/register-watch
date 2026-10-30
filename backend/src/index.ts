@@ -34,6 +34,41 @@ async function currentShift(env: Env, cam: any, now: number): Promise<string> {
   return id;
 }
 
+// ---- Login with Hik-Connect: the Worker checks the account with Hik-Connect itself, then issues its own signed token ----
+const te = new TextEncoder();
+const hexOf = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+const md5hex = async (s: string) => hexOf(await crypto.subtle.digest("MD5", te.encode(s)));
+const sha256hex = async (s: string) => hexOf(await crypto.subtle.digest("SHA-256", te.encode(s)));
+async function hmac(key: string, msg: string) {
+  const k = await crypto.subtle.importKey("raw", te.encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return hexOf(await crypto.subtle.sign("HMAC", k, te.encode(msg)));
+}
+const HIK_HOSTS = [".hik-connect.com", ".hikvision.com", ".ezvizlife.com"];
+async function hikLogin(email: string, password: string): Promise<number> { // returns Hik-Connect's own result code (200 = ok)
+  let base = "https://api.hik-connect.com"; const fc = rand().slice(0, 32);
+  for (let hop = 0; hop < 3; hop++) {
+    const r = await fetch(`${base}/v3/users/login/v2`, { method: "POST", headers: { clientType: "55", clientVersion: "6.0.0.20250101", featureCode: fc, lang: "en-US", clientNo: "shadicam", clientName: "shadicam", osVersion: "Android", netType: "WIFI", "content-type": "application/x-www-form-urlencoded" },
+      body: `account=${encodeURIComponent(email)}&password=${await md5hex(password)}&featureCode=${fc}` });
+    const p: any = await r.json(); const c = p?.meta?.code, d = p?.loginArea?.apiDomain;
+    if (c === 1100 && d && HIK_HOSTS.some(h => String(d).endsWith(h))) { base = `https://${d}`; continue; }
+    return c;
+  }
+  return -1;
+}
+async function makeToken(env: Env, email: string) {
+  const body = `${btoa(encodeURIComponent(email))}.${Date.now() + 90 * DAY}`;
+  return `${body}.${await hmac(env.APP_KEY, body)}`;
+}
+async function tokenSigOk(env: Env, tok: string) {
+  const [e, exp, sig] = tok.split(".");
+  return !!sig && Number(exp) > Date.now() && sig === await hmac(env.APP_KEY, `${e}.${exp}`);
+}
+async function tokenOk(env: Env, tok: string) { // valid signature AND it belongs to the owner account
+  if (!(await tokenSigOk(env, tok))) return false;
+  const own = await env.DB.prepare("SELECT v FROM meta WHERE k='owner'").first<any>();
+  return !!own && own.v === await sha256hex(decodeURIComponent(atob(tok.split(".")[0])));
+}
+
 async function ingest(req: Request, env: Env, id: string, token: string) {
   const cam = await env.DB.prepare("SELECT * FROM cameras WHERE id=?").bind(id).first<any>();
   if (!cam || cam.token !== token) return json({ error: "unauthorized" }, 401);
@@ -71,8 +106,30 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url), p = url.pathname.split("/").filter(Boolean);
     if (p[0] === "ingest" && req.method === "POST") return ingest(req, env, p[1], url.searchParams.get("token") ?? "");
-    if (req.headers.get("authorization") !== `Bearer ${env.APP_KEY}`) return json({ error: "unauthorized" }, 401);
+    if (p[0] === "auth" && p[1] === "hik" && req.method === "POST") {
+      const b = await req.json<any>().catch(() => ({})); const e = String(b.email || "").trim().toLowerCase(), pw = String(b.password || "");
+      if (!e || !pw) return json({ error: "bad request" }, 400);
+      const fk = `fails:${Math.floor(Date.now() / 3_600_000)}`;
+      const f = Number((await env.DB.prepare("SELECT v FROM meta WHERE k=?").bind(fk).first<any>())?.v || 0);
+      if (f >= 20) return json({ error: "too many attempts" }, 429);
+      let code = -2; try { code = await hikLogin(e, pw); } catch {}
+      if (code !== 200) {
+        await env.DB.prepare("INSERT INTO meta(k,v) VALUES(?,'1') ON CONFLICT(k) DO UPDATE SET v=CAST(v AS INTEGER)+1").bind(fk).run();
+        return json({ error: code === 1013 || code === 1014 ? "badlogin" : code === 1015 ? "captcha" : "hik" + code }, 401);
+      }
+      const h = await sha256hex(e), own = await env.DB.prepare("SELECT v FROM meta WHERE k='owner'").first<any>();
+      if (!own) await env.DB.prepare("INSERT INTO meta(k,v) VALUES('owner',?)").bind(h).run();
+      else if (own.v !== h) return json({ error: "not the owner" }, 403);
+      return json({ token: await makeToken(env, e) });
+    }
+    const au = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
+    if (au !== env.APP_KEY && !(await tokenOk(env, au))) return json({ error: "unauthorized" }, 401);
     if (p[0] !== "api") return json({ error: "not found" }, 404);
+    if (p[1] === "selftest") { // checks MD5, token signing, and that this Worker can reach the real Hik-Connect
+      let hik: any = null; try { hik = await hikLogin("nobody@example.invalid", "x"); } catch (e) { hik = "error:" + String(e).slice(0, 80); }
+      const t = await makeToken(env, "a@b.c");
+      return json({ md5: (await md5hex("secret")) === "5ebe2294ecd0e0f08eab7690d2a6ee69", token: await tokenSigOk(env, t), hik });
+    }
 
     if (p[1] === "analyze" && req.method === "POST") { // test helper: POST a JPEG, ?x&y&w&h = register box in %
       const buf = await req.arrayBuffer();

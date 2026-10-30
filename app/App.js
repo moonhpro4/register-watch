@@ -6,12 +6,13 @@ import * as Notifications from "expo-notifications";
 import BackgroundService from "react-native-background-actions";
 import * as FileSystem from "expo-file-system";
 import { isapi, digestHeaders, parseDevice, parseChannels } from "./hik";
+import { newState, login as hikLogin, listCameras as hikList, snapshot as hikSnapshot, b64ToBytes, bytesToB64 } from "./hikcloud";
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
 const ar = getLocales()[0]?.languageCode === "ar";
 const D = {
-  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", n24: "24 hours saved. Starting a new recording.", theft: "Possible theft at the register", svc: "Watching your cameras", camAddr: "Camera address (optional)", bad: "That address isn’t valid. Use http://… or rtsp://…", down: "Can’t reach this address. It may be fake or wrong, or you may be away from the store’s Wi‑Fi.", downBtn: "Add anyway", blocked: "Someone is blocking the register", app: "Shadi Cam", pickT: "Where should recordings be saved?", pickD: "Choose a folder on your phone (for example Documents). The app creates a folder called “Shadi Cam” inside it and saves every recording and theft picture there. Nothing is deleted from your phone.", pickB: "Choose folder", skip: "Skip", addNvr: "Add Hikvision NVR / DVR", nvrHint: "Your phone must be on the same Wi‑Fi as the NVR. Leave it at the store: it sends the pictures to the cloud. Hik-Connect keeps working as usual. Tip: create a separate NVR user with only live view permission instead of using admin.", host: "NVR address (IP)", port: "Port", user: "Username", pass: "Password", connect: "Connect", found: "Connected", chansT: "Cameras found (tap to choose)", addSel: "Add selected cameras", badPass: "Wrong username or password.", notHik: "This doesn’t look like a Hikvision device.", noReach: "Can’t reach the NVR. Check the address, and that this phone is on the same Wi‑Fi as the NVR.", sha: "This NVR uses a login type the app doesn’t support yet (SHA‑256). In the NVR’s network settings, set web authentication to digest/basic.", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
-  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", n24: "تم حفظ 24 ساعة. بدء تسجيل جديد.", theft: "احتمال سرقة عند الصندوق", svc: "مراقبة الكاميرات", camAddr: "عنوان الكاميرا (اختياري)", bad: "العنوان غير صالح. استخدم http://… أو rtsp://…", down: "تعذّر الوصول إلى هذا العنوان. قد يكون مزيفًا أو خاطئًا، أو أنك بعيد عن شبكة المتجر.", downBtn: "إضافة على أي حال", blocked: "شخص يحجب الصندوق", app: "كمرت شادي", pickT: "أين تريد حفظ التسجيلات؟", pickD: "اختر مجلدًا على هاتفك (مثل Documents). سينشئ التطبيق بداخله مجلدًا باسم «Shadi Cam» ويحفظ فيه كل تسجيل وكل صورة سرقة. لا يتم حذف أي شيء من هاتفك.", pickB: "اختيار المجلد", skip: "تخطي", addNvr: "إضافة جهاز تسجيل هيكفيجن (NVR / DVR)", nvrHint: "يجب أن يكون هاتفك على نفس شبكة الواي فاي مع الجهاز. اتركه في المتجر: يرسل الصور إلى السحابة. يستمر تطبيق Hik-Connect بالعمل كالمعتاد. نصيحة: أنشئ مستخدمًا منفصلًا في الجهاز بصلاحية المشاهدة المباشرة فقط بدل admin.", host: "عنوان الجهاز (IP)", port: "المنفذ", user: "اسم المستخدم", pass: "كلمة المرور", connect: "اتصال", found: "تم الاتصال", chansT: "الكاميرات الموجودة (اضغط للاختيار)", addSel: "إضافة الكاميرات المحددة", badPass: "اسم المستخدم أو كلمة المرور خاطئة.", notHik: "هذا لا يبدو جهاز هيكفيجن.", noReach: "تعذّر الوصول إلى الجهاز. تحقق من العنوان ومن أن هذا الهاتف على نفس شبكة الواي فاي.", sha: "هذا الجهاز يستخدم نوع تسجيل دخول غير مدعوم بعد (SHA‑256). في إعدادات الشبكة بالجهاز اجعل التوثيق digest/basic.", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
+  en: { title: "Your stores", none: "No cameras yet", noneSub: "Add a camera from any brand. It works with any camera that can send pictures.", add: "Add camera", store: "Store name", cname: "Camera name", create: "Create", cancel: "Cancel", server: "Server address", key: "App key", save: "Save", live: "Live", thefts: "Past thefts", waiting: "Waiting for the first picture from the camera…", url: "Paste this link into the camera’s HTTP upload (snapshot push) setting:", verified: "Verified: camera is sending pictures", unverified: "Not verified yet", find: "Find register with AI", mark: "Mark it myself", remove: "No register on this camera", saveArea: "Save area", drag: "Drag over the register. The AI watches only this spot.", nothing: "No theft alerts.", noreg: "No register area set. This camera only records; alerts are off.", shifts: "24-hour recordings", recording: "Recording now", savedv: "Saved", play: "Play", pause: "Pause", back5: "−5 min", fwd5: "+5 min", frames: "pictures", noshifts: "No recordings yet. They start when the camera sends its first picture.", n24: "24 hours saved. Starting a new recording.", theft: "Possible theft at the register", svc: "Watching your cameras", camAddr: "Camera address (optional)", bad: "That address isn’t valid. Use http://… or rtsp://…", down: "Can’t reach this address. It may be fake or wrong, or you may be away from the store’s Wi‑Fi.", downBtn: "Add anyway", blocked: "Someone is blocking the register", app: "Shadi Cam", pickT: "Where should recordings be saved?", pickD: "Choose a folder on your phone (for example Documents). The app creates a folder called “Shadi Cam” inside it and saves every recording and theft picture there. Nothing is deleted from your phone.", pickB: "Choose folder", skip: "Skip", addNvr: "Add Hikvision NVR / DVR", nvrHint: "Your phone must be on the same Wi‑Fi as the NVR. Leave it at the store: it sends the pictures to the cloud. Hik-Connect keeps working as usual. Tip: create a separate NVR user with only live view permission instead of using admin.", host: "NVR address (IP)", port: "Port", user: "Username", pass: "Password", connect: "Connect", found: "Connected", chansT: "Cameras found (tap to choose)", addSel: "Add selected cameras", badPass: "Wrong username or password.", notHik: "This doesn’t look like a Hikvision device.", noReach: "Can’t reach the NVR. Check the address, and that this phone is on the same Wi‑Fi as the NVR.", sha: "This NVR uses a login type the app doesn’t support yet (SHA‑256). In the NVR’s network settings, set web authentication to digest/basic.", syncHik: "Sync with Hik-Connect", hikHint: "Log in with the same account you use in the Hik-Connect app. Your login stays on this phone. Works from any network. Pictures from the Hik-Connect cloud are small, so the AI sees less detail than with a direct NVR connection.", email: "Hik-Connect email or phone", hikLogin: "Log in", hikBad: "Wrong email/phone or password.", hikCaptcha: "Hik-Connect is asking for a CAPTCHA. Log in once in the Hik-Connect app, then try again.", hikNone: "No cameras found on this account.", hikFail: "Couldn’t reach Hik-Connect. Check your internet and login.", hikNoPic: "Couldn’t get a picture from", hikCode: "Verification code (only if pictures fail)", hikAdd: "Add selected cameras", hikLive: "Live: updates every few seconds", back: "Back", noimg: "No picture yet. Check that the camera sends pictures.", fail: "Could not reach the server. Check the address and key." },
+  ar: { title: "متاجرك", none: "لا توجد كاميرات بعد", noneSub: "أضف كاميرا من أي علامة تجارية. تعمل مع أي كاميرا تستطيع إرسال الصور.", add: "إضافة كاميرا", store: "اسم المتجر", cname: "اسم الكاميرا", create: "إنشاء", cancel: "إلغاء", server: "عنوان الخادم", key: "مفتاح التطبيق", save: "حفظ", live: "مباشر", thefts: "السرقات السابقة", waiting: "في انتظار أول صورة من الكاميرا…", url: "الصق هذا الرابط في إعدادات رفع الصور (HTTP) في الكاميرا:", verified: "تم التحقق: الكاميرا ترسل الصور", unverified: "لم يتم التحقق بعد", find: "البحث عن الصندوق بالذكاء الاصطناعي", mark: "تحديده بنفسي", remove: "لا يوجد صندوق في هذه الكاميرا", saveArea: "حفظ المنطقة", drag: "اسحب فوق الصندوق. يراقب الذكاء الاصطناعي هذا المكان فقط.", nothing: "لا توجد تنبيهات سرقة.", noreg: "لا توجد منطقة صندوق. هذه الكاميرا تسجّل فقط وبدون تنبيهات.", shifts: "تسجيلات 24 ساعة", recording: "جارٍ التسجيل", savedv: "تم الحفظ", play: "تشغيل", pause: "إيقاف", back5: "−5 د", fwd5: "+5 د", frames: "صورة", noshifts: "لا توجد تسجيلات بعد. تبدأ عند وصول أول صورة من الكاميرا.", n24: "تم حفظ 24 ساعة. بدء تسجيل جديد.", theft: "احتمال سرقة عند الصندوق", svc: "مراقبة الكاميرات", camAddr: "عنوان الكاميرا (اختياري)", bad: "العنوان غير صالح. استخدم http://… أو rtsp://…", down: "تعذّر الوصول إلى هذا العنوان. قد يكون مزيفًا أو خاطئًا، أو أنك بعيد عن شبكة المتجر.", downBtn: "إضافة على أي حال", blocked: "شخص يحجب الصندوق", app: "كمرت شادي", pickT: "أين تريد حفظ التسجيلات؟", pickD: "اختر مجلدًا على هاتفك (مثل Documents). سينشئ التطبيق بداخله مجلدًا باسم «Shadi Cam» ويحفظ فيه كل تسجيل وكل صورة سرقة. لا يتم حذف أي شيء من هاتفك.", pickB: "اختيار المجلد", skip: "تخطي", addNvr: "إضافة جهاز تسجيل هيكفيجن (NVR / DVR)", nvrHint: "يجب أن يكون هاتفك على نفس شبكة الواي فاي مع الجهاز. اتركه في المتجر: يرسل الصور إلى السحابة. يستمر تطبيق Hik-Connect بالعمل كالمعتاد. نصيحة: أنشئ مستخدمًا منفصلًا في الجهاز بصلاحية المشاهدة المباشرة فقط بدل admin.", host: "عنوان الجهاز (IP)", port: "المنفذ", user: "اسم المستخدم", pass: "كلمة المرور", connect: "اتصال", found: "تم الاتصال", chansT: "الكاميرات الموجودة (اضغط للاختيار)", addSel: "إضافة الكاميرات المحددة", badPass: "اسم المستخدم أو كلمة المرور خاطئة.", notHik: "هذا لا يبدو جهاز هيكفيجن.", noReach: "تعذّر الوصول إلى الجهاز. تحقق من العنوان ومن أن هذا الهاتف على نفس شبكة الواي فاي.", sha: "هذا الجهاز يستخدم نوع تسجيل دخول غير مدعوم بعد (SHA‑256). في إعدادات الشبكة بالجهاز اجعل التوثيق digest/basic.", syncHik: "مزامنة مع Hik-Connect", hikHint: "سجّل الدخول بنفس الحساب الذي تستخدمه في تطبيق Hik-Connect. يبقى تسجيل دخولك على هذا الهاتف. يعمل من أي شبكة. صور سحابة Hik-Connect صغيرة، لذا يرى الذكاء الاصطناعي تفاصيل أقل مقارنة بالاتصال المباشر بالجهاز.", email: "بريد أو هاتف Hik-Connect", hikLogin: "تسجيل الدخول", hikBad: "البريد/الهاتف أو كلمة المرور خاطئة.", hikCaptcha: "يطلب Hik-Connect اختبار CAPTCHA. سجّل الدخول مرة واحدة في تطبيق Hik-Connect ثم حاول مجددًا.", hikNone: "لا توجد كاميرات في هذا الحساب.", hikFail: "تعذّر الوصول إلى Hik-Connect. تحقق من الإنترنت وبيانات الدخول.", hikNoPic: "تعذّر الحصول على صورة من", hikCode: "رمز التحقق (فقط إذا فشلت الصور)", hikAdd: "إضافة الكاميرات المحددة", hikLive: "مباشر: يتحدث كل بضع ثوانٍ", back: "رجوع", noimg: "لا توجد صورة بعد. تأكد أن الكاميرا ترسل الصور.", fail: "تعذّر الوصول إلى الخادم. تحقق من العنوان والمفتاح." },
 };
 const t = (k) => D[ar ? "ar" : "en"][k];
 const Btn = ({ children, onPress, ghost }) => (
@@ -47,6 +48,7 @@ export default function App() {
     </SafeAreaView>);
 
   if (root === "") return <PickFolder done={setRoot} />;
+  if (scr.n === "hik") return <AddHik api={api} back={() => setScr({ n: "home" })} done={() => { load(); setScr({ n: "home" }); }} />;
   if (scr.n === "nvr") return <AddNvr api={api} back={() => setScr({ n: "home" })} done={() => { load(); setScr({ n: "home" }); }} />;
   if (scr.n === "add") return <AddCam api={api} done={(c) => { load(); setScr({ n: "created", c }); }} back={() => setScr({ n: "home" })} />;
   if (scr.n === "created") return <Created api={api} c={scr.c} back={() => { load(); setScr({ n: "home" }); }} />;
@@ -57,13 +59,13 @@ export default function App() {
     <SafeAreaView style={s.app}><ScrollView>
       <Text style={s.h1}>{t("title")}</Text><DevBanner />
       {!cams.length ? (
-        <View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn><Btn ghost onPress={() => setScr({ n: "nvr" })}>+ {t("addNvr")}</Btn></View>
+        <View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn><Btn onPress={() => setScr({ n: "hik" })}>{t("syncHik")}</Btn><Btn ghost onPress={() => setScr({ n: "nvr" })}>+ {t("addNvr")}</Btn></View>
       ) : (<>
         {stores.map((st) => (<View key={st}><Text style={s.h2}>{st}</Text>
           {cams.filter((c) => c.store === st).map((c) => (
             <Pressable key={c.id} style={s.card} onPress={() => setScr({ n: "cam", id: c.id })}>
               <Text style={{ fontWeight: "700" }}>{c.name}</Text><Text style={s.mute}>{c.verified ? "● " + t("verified") : "○ " + t("unverified")}</Text></Pressable>))}</View>))}
-        <Btn ghost onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn><Btn ghost onPress={() => setScr({ n: "nvr" })}>+ {t("addNvr")}</Btn></>)}
+        <Btn ghost onPress={() => setScr({ n: "add" })}>+ {t("add")}</Btn><Btn onPress={() => setScr({ n: "hik" })}>{t("syncHik")}</Btn><Btn ghost onPress={() => setScr({ n: "nvr" })}>+ {t("addNvr")}</Btn></>)}
     </ScrollView></SafeAreaView>);
 }
 
@@ -106,9 +108,17 @@ function Created({ api, c, back }) {
 }
 
 function Cam({ api, cfg, cam, reload, back }) {
-  const [tab, setTab] = useState("live"), [edit, setEdit] = useState(false), [tmp, setTmp] = useState(null), [alerts, setAlerts] = useState([]);
+  const [liveUri, setLiveUri] = useState(null), [tab, setTab] = useState("live"), [edit, setEdit] = useState(false), [tmp, setTmp] = useState(null), [alerts, setAlerts] = useState([]);
   const size = useRef({ w: 1, h: 1 }), st = useRef(null);
   const hdr = { Authorization: "Bearer " + cfg.key };
+  useEffect(() => {
+    if (tab !== "live" || edit) return; let on = true;
+    (async () => {
+      const d = await hikData(), m = d && (d.cams || []).find((x) => x.camId === cam.id); if (!m) return;
+      while (on) { try { const u = await hikJpegFile(d, m.serial, m.ch, "live" + Date.now()); if (u && on) setLiveUri(u); } catch {} await sleep(3000); }
+    })();
+    return () => { on = false; };
+  }, [tab, edit]);
   useEffect(() => { api("/api/alerts?camera=" + cam.id).then(setAlerts).catch(() => {}); }, []);
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -126,9 +136,10 @@ function Cam({ api, cfg, cam, reload, back }) {
       {["live", "shifts", "thefts"].map((k) => <Pressable key={k} onPress={() => setTab(k)} style={[s.tab, tab === k && s.tabOn]}><Text>{t(k)}</Text></Pressable>)}</View>
     {tab === "live" && (<>
       <View style={s.scene} onLayout={(e) => (size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} {...(edit ? pan.panHandlers : {})}>
-        <Image source={{ uri: `${cfg.base.replace(/\/$/, "")}/api/cameras/${cam.id}/latest?t=${Date.now()}`, headers: hdr }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image source={liveUri ? { uri: liveUri } : { uri: `${cfg.base.replace(/\/$/, "")}/api/cameras/${cam.id}/latest?t=${Date.now()}`, headers: hdr }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         {z && <View pointerEvents="none" style={[s.zone, { left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }]} />}</View>
       {edit ? (<><Text style={s.mute}>{t("drag")}</Text><Btn onPress={() => tmp && putZone(tmp)}>{t("saveArea")}</Btn><Btn ghost onPress={() => { setEdit(false); setTmp(null); }}>{t("cancel")}</Btn></>) : (<>
+        {liveUri && <Text style={s.mute}>{t("hikLive")}</Text>}
         {!cam.zone && <Text style={s.mute}>{t("noreg")}</Text>}
         <Btn onPress={find}>{t("find")}</Btn><Btn ghost onPress={() => setEdit(true)}>{t("mark")}</Btn>{cam.zone && <Btn ghost onPress={() => putZone(null)}>{t("remove")}</Btn>}</>)}</>)}
     {tab === "shifts" && <Shifts api={api} cfg={cfg} cam={cam} />}
@@ -303,10 +314,81 @@ function AddNvr({ api, back, done }) {
     <Btn ghost onPress={back}>{t("back")}</Btn></ScrollView></SafeAreaView>);
 }
 
+// ---- Hik-Connect cloud: log in with your Hik-Connect account; works from any network ----
+const HIKF = FileSystem.documentDirectory + "hik.json";
+let HS = null, HSAt = 0; // cached cloud session (re-login every 20 min)
+async function hikData() { try { return JSON.parse(await FileSystem.readAsStringAsync(HIKF)); } catch { return null; } }
+async function hikSession(d) {
+  if (HS && Date.now() - HSAt < 20 * 60000) return HS;
+  const st = newState(); await hikLogin(st, d.email, (await SecureStore.getItemAsync("hikpw")) || ""); HS = st; HSAt = Date.now(); return st;
+}
+const dlBytes = async (url) => {
+  const tmp = FileSystem.cacheDirectory + "hikdl.bin", r = await FileSystem.downloadAsync(url, tmp);
+  if (r.status !== 200) throw new Error("dl");
+  return b64ToBytes(await FileSystem.readAsStringAsync(tmp, { encoding: FileSystem.EncodingType.Base64 }));
+};
+async function hikJpegFile(d, serial, ch, suffix = "") {
+  const st = await hikSession(d);
+  try {
+    const bytes = await hikSnapshot(st, serial, ch, (d.codes || {})[serial] || "", dlBytes); if (!bytes) return null;
+    const f = FileSystem.cacheDirectory + `hik_${serial}_${ch}${suffix}.jpg`;
+    await FileSystem.writeAsStringAsync(f, bytesToB64(bytes), { encoding: FileSystem.EncodingType.Base64 }); return f;
+  } catch (e) { HS = null; throw e; }
+}
+async function bridgeHik() {
+  const d = await hikData(); if (!d || !d.cams) return;
+  for (const c of d.cams) {
+    try { const f = await hikJpegFile(d, c.serial, c.ch); if (f) await FileSystem.uploadAsync(c.uploadUrl, f, { httpMethod: "POST", uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT, headers: { "content-type": "image/jpeg" } }); } catch {}
+  }
+}
+function AddHik({ api, back, done }) {
+  const [f, setF] = useState({ email: "", pass: "", store: "" }), [list, setList] = useState(null), [sel, setSel] = useState({}), [codes, setCodes] = useState({}), [busy, setBusy] = useState(false);
+  const key = (c) => c.serial + ":" + c.ch;
+  const connect = async () => {
+    setBusy(true);
+    try {
+      const st = newState(); await hikLogin(st, f.email.trim(), f.pass);
+      const cams = await hikList(st); if (!cams.length) throw new Error("none");
+      HS = st; HSAt = Date.now(); setList(cams); setSel(Object.fromEntries(cams.map((c) => [key(c), true])));
+    } catch (e) { Alert.alert(e.message === "badlogin" ? t("hikBad") : e.message === "captcha" ? t("hikCaptcha") : e.message === "none" ? t("hikNone") : t("hikFail")); }
+    setBusy(false);
+  };
+  const add = async () => {
+    setBusy(true);
+    try {
+      const old = (await hikData()) || { cams: [], codes: {} }, chosen = list.filter((c) => sel[key(c)] && !old.cams.find((o) => o.serial === c.serial && o.ch === c.ch));
+      await SecureStore.setItemAsync("hikpw", f.pass);
+      const d = { email: f.email.trim(), codes: { ...old.codes, ...codes }, cams: [...old.cams] };
+      for (const serial of [...new Set(chosen.map((c) => c.serial))]) { // test one picture per device first
+        const c0 = chosen.find((c) => c.serial === serial);
+        if (!(await hikJpegFile(d, c0.serial, c0.ch).catch(() => null))) { Alert.alert(t("hikNoPic") + " " + c0.device); setBusy(false); return; }
+      }
+      for (const c of chosen) {
+        const r = await api("/api/cameras", { method: "POST", body: JSON.stringify({ store: f.store.trim() || c.device, name: c.name }) });
+        d.cams.push({ serial: c.serial, ch: c.ch, camId: r.id, uploadUrl: r.uploadUrl });
+      }
+      await FileSystem.writeAsStringAsync(HIKF, JSON.stringify(d)); done();
+    } catch { Alert.alert(t("fail")); }
+    setBusy(false);
+  };
+  const devices = list ? [...new Set(list.map((c) => c.serial))] : [];
+  return (<SafeAreaView style={s.app}><ScrollView>
+    <Text style={s.h2}>{t("syncHik")}</Text><Text style={s.mute}>{t("hikHint")}</Text>
+    {!list ? (<>
+      <Text>{t("email")}</Text><TextInput style={s.in} autoCapitalize="none" value={f.email} onChangeText={(v) => setF({ ...f, email: v })} />
+      <Text>{t("pass")}</Text><TextInput style={s.in} autoCapitalize="none" secureTextEntry value={f.pass} onChangeText={(v) => setF({ ...f, pass: v })} />
+      <Btn onPress={connect}>{busy ? "…" : t("hikLogin")}</Btn></>) : (<>
+      {devices.map((sn) => (<View key={sn}><Text style={s.h2}>{list.find((c) => c.serial === sn).device}</Text>
+        <TextInput style={s.in} autoCapitalize="none" placeholder={t("hikCode")} value={codes[sn] || ""} onChangeText={(v) => setCodes({ ...codes, [sn]: v })} />
+        {list.filter((c) => c.serial === sn).map((c) => (<Pressable key={key(c)} style={s.card} onPress={() => setSel({ ...sel, [key(c)]: !sel[key(c)] })}><Text>{sel[key(c)] ? "☑ " : "☐ "}{c.name}</Text></Pressable>))}</View>))}
+      <Btn onPress={add}>{busy ? "…" : t("hikAdd")}</Btn></>)}
+    <Btn ghost onPress={back}>{t("back")}</Btn></ScrollView></SafeAreaView>);
+}
+
 // Android foreground service: alerts, plus copying every recording to the phone, one step at a time.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function watchTask({ base, key, root }) {
-  base = base.replace(/\/$/, ""); let since = Date.now(), lastSync = 0, lastBridge = 0; const saving = root && root !== "skip";
+  base = base.replace(/\/$/, ""); let since = Date.now(), lastSync = 0, lastBridge = 0, lastHik = 0; const saving = root && root !== "skip";
   while (BackgroundService.isRunning()) {
     try {
       const r = await fetch(base + "/api/events?since=" + since, { headers: { authorization: "Bearer " + key } });
@@ -317,6 +399,7 @@ async function watchTask({ base, key, root }) {
       }
     } catch {}
     if (Date.now() - lastBridge > 30000) { lastBridge = Date.now(); try { await bridgeNvrs(); } catch {} }
+    if (Date.now() - lastHik > 60000) { lastHik = Date.now(); try { await bridgeHik(); } catch {} }
     if (saving && Date.now() - lastSync > 60000) { lastSync = Date.now(); try { await syncToDevice(base, key, root); } catch {} }
     await sleep(10000);
   }

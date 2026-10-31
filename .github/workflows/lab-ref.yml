@@ -1,0 +1,14 @@
+name: Lab - reference live stream test
+on: workflow_dispatch
+jobs:
+  ref:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg && pip install -q hikcloudstream
+      - name: Record 8 s per camera with the reference library (no footage is kept)
+        working-directory: lab
+        env: { HIK_EMAIL: "${{ secrets.HIK_EMAIL }}", HIK_PASSWORD: "${{ secrets.HIK_PASSWORD }}" }
+        run: python3 ref_stream.py

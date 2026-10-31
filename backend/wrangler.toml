@@ -12,6 +12,10 @@ database_id = "PUT_YOUR_D1_ID_HERE"
 
 [vars]
 AI_MODEL = "@cf/google/gemma-4-26b-a4b-it"
+OLLAMA_MODEL = "gemma4:31b"
+AI_STAGE1 = "cf"      # frequent single-picture checks: Cloudflare Gemma (use "mix" to split cameras between both)
+AI_STAGE2 = "ollama"  # "was it paid for?" check over several pictures: Ollama gemma4:31b
+AI_FIND = "cf"
 
 [triggers]
 crons = ["*/15 * * * *"]

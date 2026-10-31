@@ -1,4 +1,4 @@
-export interface Env { DB: D1Database; AI: any; APP_KEY: string; AI_MODEL: string }
+export interface Env { DB: D1Database; AI: any; APP_KEY: string; AI_MODEL: string; OLLAMA_API_KEY?: string; OLLAMA_MODEL?: string; AI_STAGE1?: string; AI_STAGE2?: string; AI_FIND?: string }
 const json = (d: unknown, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
 const rand = () => [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, "0")).join("");
 function b64(buf: ArrayBuffer) { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); }
@@ -16,6 +16,30 @@ async function askText(env: Env, imgs: string | string[], prompt: string): Promi
 }
 const parse = (text: string) => { const m = text.match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
 const ask = async (env: Env, imgs: string | string[], prompt: string) => parse(await askText(env, imgs, prompt));
+// ---- Two AI providers that share the work: Cloudflare Gemma (small, cheap, fast) and Ollama gemma4:31b (bigger). Each job has a preferred one; the other is the automatic fallback. ----
+type Prov = "cf" | "ollama";
+const hashS = (x: string) => [...x].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+function route(env: Env, job: "STAGE1" | "STAGE2" | "FIND", camId: string): Prov[] {
+  if (!env.OLLAMA_API_KEY) return ["cf"];
+  const v = (env as any)["AI_" + job] || (job === "STAGE2" ? "ollama" : "cf"); // cf | ollama | mix (mix = split cameras between the two)
+  const first: Prov = v === "mix" ? (hashS(camId) % 2 ? "ollama" : "cf") : v === "ollama" ? "ollama" : "cf";
+  return [first, first === "cf" ? "ollama" : "cf"];
+}
+async function askOllama(env: Env, imgs: string | string[], prompt: string): Promise<string> {
+  const list = Array.isArray(imgs) ? imgs : [imgs], ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 25_000);
+  try {
+    const r = await fetch("https://ollama.com/api/chat", { method: "POST", signal: ctl.signal, headers: { authorization: `Bearer ${env.OLLAMA_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: env.OLLAMA_MODEL || "gemma4:31b", stream: false, messages: [{ role: "user", content: prompt, ...(list.length ? { images: list } : {}) }] }) });
+    if (!r.ok) throw new Error(`ollama ${r.status} ${(await r.text()).slice(0, 120)}`);
+    return String(((await r.json()) as any)?.message?.content ?? "");
+  } finally { clearTimeout(to); }
+}
+async function askVia(env: Env, order: Prov[], imgs: string | string[], prompt: string): Promise<{ text: string; via: Prov }> {
+  let last: any = null;
+  for (const pv of order) { try { const text = pv === "cf" ? await askText(env, imgs, prompt) : await askOllama(env, imgs, prompt); if (text.trim()) return { text, via: pv }; } catch (e) { last = e; console.log("ai provider failed", pv, String(e).slice(0, 160)); } }
+  throw last || new Error("no answer");
+}
+const askJ = async (env: Env, job: "STAGE1" | "STAGE2" | "FIND", camId: string, imgs: string | string[], prompt: string) => parse((await askVia(env, route(env, job, camId), imgs, prompt)).text);
 const regPrompt = (z: any) => `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide: "theft" = a person takes money out of the register or drawer into their hand or pocket; "blocked" = something or someone is covering or blocking the register area so it cannot be seen; "handoff" = an employee is handing goods or an item to a customer, or a customer is walking away holding goods; otherwise "none". Customers paying are "none" unless goods are being handed over. Reply ONLY JSON: {"event":"theft|blocked|handoff|none","confidence":0-1,"note":"short reason"}`;
 const unpaidPrompt = (z: any, n: number) => `These ${n} frames are from one shop security camera, in time order (oldest first), spanning about a minute. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide whether a customer received goods or an item from an employee and did NOT pay: no cash handed to the employee or put on the counter, no card or phone tapped on a payment terminal, the register drawer never opened and no cash was added. If a customer clearly paid (cash or card), or no goods were handed over, or you cannot tell, answer "ok". Reply ONLY JSON: {"event":"unpaid|ok","confidence":0-1,"note":"short reason"}`;
 
@@ -71,7 +95,7 @@ async function tokenOk(env: Env, tok: string) { // valid signature AND it belong
   return !!own && own.v === await sha256hex(decodeURIComponent(atob(tok.split(".")[0])));
 }
 
-async function ingest(req: Request, env: Env, id: string, token: string) {
+async function ingest(req: Request, env: Env, ctx: ExecutionContext, id: string, token: string) {
   const cam = await env.DB.prepare("SELECT * FROM cameras WHERE id=?").bind(id).first<any>();
   if (!cam || cam.token !== token) return json({ error: "unauthorized" }, 401);
   let buf: ArrayBuffer;
@@ -92,7 +116,11 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
   }
   if (!cam.zone || now - cam.last_ai < 10_000) return json({ ok: true });
   await env.DB.prepare("UPDATE cameras SET last_ai=? WHERE id=?").bind(now, id).run();
-  const z = JSON.parse(cam.zone);
+  ctx.waitUntil(analyze(env, id, JSON.parse(cam.zone), data, now).catch(e => console.log("analyze error", String(e))));
+  return json({ ok: true }); // the phone doesn't wait for the AI
+}
+
+async function analyze(env: Env, id: string, z: any, data: string, now: number) {
   const addAlert = async (kind: string, note: string, img: string) => { // one alert per kind per camera per 2 minutes
     const lk = `last:${id}:${kind}`, last = Number((await env.DB.prepare("SELECT v FROM meta WHERE k=?").bind(lk).first<any>())?.v || 0);
     if (now - last < 120_000) return;
@@ -110,23 +138,23 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
       const { results } = await env.DB.prepare("SELECT data FROM recent WHERE camera_id=? AND ts>=? ORDER BY ts").bind(id, started - 20_000).all<any>();
       const all = results.map(r => r.data as string), pick = all.length <= 6 ? all : Array.from({ length: 6 }, (_, i) => all[Math.round(i * (all.length - 1) / 5)]);
       if (pick.length >= 2) {
-        const u = await ask(env, pick, unpaidPrompt(z, pick.length));
+        const u = await askJ(env, "STAGE2", id, pick, unpaidPrompt(z, pick.length));
         if (u && u.event === "unpaid" && u.confidence >= 0.6) await addAlert("unpaid", u.note ?? "", pick[Math.floor(pick.length / 2)]);
       }
     } catch (e) { console.log("ai error (seq)", String(e)); }
   }
   // Stage 1: look at the newest frame.
   let v: any = null;
-  try { v = await ask(env, data, regPrompt(z)); } catch (e) { console.log("ai error", String(e)); }
+  try { v = await askJ(env, "STAGE1", id, data, regPrompt(z)); } catch (e) { console.log("ai error", String(e)); }
   if (v && (v.event === "theft" || v.event === "blocked") && v.confidence >= 0.6) await addAlert(v.event, v.note ?? "", data);
   else if (v && v.event === "handoff" && v.confidence >= 0.6 && !pend) await env.DB.prepare("INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)").bind(pk, String(now)).run();
-  return json({ ok: true });
 }
 
+
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url), p = url.pathname.split("/").filter(Boolean);
-    if (p[0] === "ingest" && req.method === "POST") return ingest(req, env, p[1], url.searchParams.get("token") ?? "");
+    if (p[0] === "ingest" && req.method === "POST") return ingest(req, env, ctx, p[1], url.searchParams.get("token") ?? "");
     if (p[0] === "auth" && p[1] === "hik" && req.method === "POST") {
       const b = await req.json<any>().catch(() => ({})); const e = String(b.email || "").trim().toLowerCase(), pw = String(b.password || "");
       if (!e || !pw) return json({ error: "bad request" }, 400);
@@ -149,20 +177,21 @@ export default {
     if (p[1] === "selftest") { // checks MD5, token signing, and that this Worker can reach the real Hik-Connect
       let hik: any = null; try { hik = await hikLogin("nobody@example.invalid", "x"); } catch (e) { hik = "error:" + String(e).slice(0, 80); }
       const t = await makeToken(env, "a@b.c");
-      return json({ md5: (await md5hex("secret")) === "5ebe2294ecd0e0f08eab7690d2a6ee69", token: await tokenSigOk(env, t), hik });
+      let ollama = "off"; if (env.OLLAMA_API_KEY) { try { ollama = "ok:" + (await askOllama(env, [], "Reply with the single word OK.")).slice(0, 30); } catch (e) { ollama = "error: " + String(e).slice(0, 140); } }
+      return json({ md5: (await md5hex("secret")) === "5ebe2294ecd0e0f08eab7690d2a6ee69", token: await tokenSigOk(env, t), hik, ollama });
     }
 
     if (p[1] === "analyze" && req.method === "POST") { // test helper: POST a JPEG, ?x&y&w&h = register box in %
       const buf = await req.arrayBuffer();
       if (!isJpeg(new Uint8Array(buf)) || buf.byteLength > MAX_IMG) return json({ error: "jpeg up to 1.4 MB" }, 400);
       const q = url.searchParams, z = { x: +(q.get("x") || 0), y: +(q.get("y") || 0), w: +(q.get("w") || 100), h: +(q.get("h") || 100) };
-      try { const raw = await askText(env, b64(buf), regPrompt(z)); return json({ raw, parsed: parse(raw) }); } catch (e) { return json({ error: String(e) }, 502); }
+      try { const via = q.get("via") as Prov | null, out = await askVia(env, via ? [via] : route(env, "STAGE1", "test"), b64(buf), regPrompt(z)); return json({ raw: out.text, parsed: parse(out.text), via: out.via }); } catch (e) { return json({ error: String(e) }, 502); }
     }
     if (p[1] === "analyze-seq" && req.method === "POST") { // test helper: {images:[base64...], x,y,w,h}
       const b = await req.json<any>().catch(() => ({})); const imgs: string[] = (b.images || []).slice(0, 8);
       if (imgs.length < 2) return json({ error: "send 2-8 base64 images" }, 400);
       const z = { x: +(b.x || 0), y: +(b.y || 0), w: +(b.w || 100), h: +(b.h || 100) };
-      try { const raw = await askText(env, imgs, unpaidPrompt(z, imgs.length)); return json({ raw, parsed: parse(raw) }); } catch (e) { return json({ error: String(e) }, 502); }
+      try { const via = b.via as Prov | undefined, out = await askVia(env, via ? [via] : route(env, "STAGE2", "test"), imgs, unpaidPrompt(z, imgs.length)); return json({ raw: out.text, parsed: parse(out.text), via: out.via }); } catch (e) { return json({ error: String(e) }, 502); }
     }
     if (p[1] === "cameras" && !p[2]) {
       if (req.method === "POST") {
@@ -188,7 +217,7 @@ export default {
       const o = await env.DB.prepare("SELECT data FROM latest WHERE camera_id=?").bind(p[2]).first<any>();
       if (!o) return json({ error: "no picture yet" }, 409);
       let v: any;
-      try { v = await ask(env, o.data, `Find the cash register in this image. Reply ONLY JSON {"found":true|false,"x":0-100,"y":0-100,"w":0-100,"h":0-100} as percentages of image width/height.`); }
+      try { v = await askJ(env, "FIND", p[2], o.data, `Find the cash register in this image. Reply ONLY JSON {"found":true|false,"x":0-100,"y":0-100,"w":0-100,"h":0-100} as percentages of image width/height.`); }
       catch (e) { return json({ error: "ai: " + String(e) }, 502); }
       return json(v?.found ? { zone: { x: v.x, y: v.y, w: v.w, h: v.h } } : { zone: null });
     }

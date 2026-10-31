@@ -59,7 +59,7 @@ for name, paid, want in (("seq_unpaid", False, "unpaid"), ("seq_paid_cash", True
     imgs = []
     for im in frames:
         b = io.BytesIO(); im.save(b, "JPEG", quality=85); imgs.append(base64.b64encode(b.getvalue()).decode())
-    req = urllib.request.Request(os.environ["BASE"] + "/api/analyze-seq", data=json.dumps({"images": imgs, "x": 44, "y": 40, "w": 24, "h": 26}).encode(), method="POST",
+    req = urllib.request.Request(os.environ["BASE"] + "/api/analyze-seq", data=json.dumps({"images": imgs, "x": 44, "y": 40, "w": 24, "h": 26, "via": os.environ.get("VIA") or None}).encode(), method="POST",
         headers={"authorization": "Bearer " + os.environ["KEY"], "content-type": "application/json", "user-agent": "Mozilla/5.0 ShadiCamTest"})
     try: r = json.load(urllib.request.urlopen(req, timeout=120))
     except Exception as e: r = {"error": str(e)[:120]}
@@ -71,7 +71,7 @@ for name, paid, want in (("seq_unpaid", False, "unpaid"), ("seq_paid_cash", True
 res = []
 for name, im in scenes().items():
     im.save(f"scenes/{name}.jpg", quality=85); buf = io.BytesIO(); im.save(buf, "JPEG", quality=85)
-    req = urllib.request.Request(os.environ["BASE"] + "/api/analyze?x=44&y=40&w=24&h=26", data=buf.getvalue(), method="POST",
+    req = urllib.request.Request(os.environ["BASE"] + "/api/analyze?x=44&y=40&w=24&h=26" + ("&via=" + os.environ["VIA"] if os.environ.get("VIA") else ""), data=buf.getvalue(), method="POST",
         headers={"authorization": "Bearer " + os.environ["KEY"], "content-type": "image/jpeg", "user-agent": "Mozilla/5.0 ShadiCamTest"})
     try: r = json.load(urllib.request.urlopen(req, timeout=90))
     except Exception as e: r = {"error": str(e)[:120]}
@@ -83,5 +83,5 @@ for name, im in scenes().items():
     res.append(f"{ok} {name}: expected {want}, AI said {ev} ({cf}) - {str(pv.get('note', r.get('error', r.get('raw', ''))))[:110]}")
 res += globals().get("SEQ", [])
 msg = "%0A".join(res)
-print("::notice::AI scene test%0A" + msg)
+print("::notice::AI scene test [" + os.environ.get("VIA", "default routing") + "]%0A" + msg)
 print("\n".join(res))

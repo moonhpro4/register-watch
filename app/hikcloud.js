@@ -51,6 +51,10 @@ function decryptCapture(raw, code) {
   if (n >= 1 && n <= 16 && out.slice(out.length - n).every((x) => x === n)) out = out.slice(0, out.length - n);
   return out;
 }
+async function captureUrl(st, serial, ch, enc) {
+  const p = await api(st, "PUT", "/v3/devices/security/capture", { deviceSerial: serial, channelNo: ch, isEncrypted: enc });
+  return p.captureInfo && p.captureInfo.picUrl;
+}
 // download(url) -> Uint8Array. Returns JPEG bytes (cloud pictures are small, about 352x288) or null.
 async function snapshot(st, serial, ch, code, download) {
   let last = null;
@@ -67,4 +71,4 @@ async function snapshot(st, serial, ch, code, download) {
 }
 const b64ToBytes = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
 const bytesToB64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
-module.exports = { newState, login, listCameras, snapshot, decryptCapture, b64ToBytes, bytesToB64 };
+module.exports = { newState, login, listCameras, snapshot, captureUrl, decryptCapture, b64ToBytes, bytesToB64 };

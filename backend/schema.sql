@@ -5,3 +5,4 @@ CREATE TABLE IF NOT EXISTS latest(camera_id TEXT PRIMARY KEY, data TEXT, ts INTE
 CREATE TABLE IF NOT EXISTS frames(shift_id TEXT, camera_id TEXT, ts INTEGER, data TEXT, PRIMARY KEY(shift_id, ts));
 CREATE TABLE IF NOT EXISTS alert_images(alert_id TEXT PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS recent(camera_id TEXT, ts INTEGER, data TEXT, PRIMARY KEY(camera_id, ts));

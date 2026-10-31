@@ -36,6 +36,38 @@ def scenes():
     im, d = base(); register(d); d.rectangle((255, 120, 460, 262), fill=(176, 130, 80), outline=(120, 85, 50), width=4); out["blocked_by_box"] = im
     return out
 
+def seq_frames(paid):
+    fr = []
+    def bag(d, x, y): d.rectangle((x - 16, y - 14, x + 16, y + 18), fill=(200, 160, 80), outline=(120, 90, 40), width=2)
+    # 1 customer approaches
+    im, d = base(); person(d, 150, (60, 90, 170)); person(d, 500, (170, 60, 60)); register(d)
+    arm(d, 160, 150, 200, 200, bill=paid); arm(d, 490, 150, 440, 205); fr.append(im)
+    # 2 payment (or nothing) at the counter
+    im, d = base(); person(d, 190, (60, 90, 170)); person(d, 500, (170, 60, 60)); register(d, drawer=paid, cash=3 if paid else 0)
+    arm(d, 200, 150, 300, 228, bill=paid); arm(d, 490, 150, 400 if paid else 440, 236 if paid else 205); fr.append(im)
+    # 3 employee hands over the bag
+    im, d = base(); person(d, 230, (60, 90, 170)); person(d, 500, (170, 60, 60)); register(d)
+    arm(d, 490, 150, 330, 215); bag(d, 330, 205); arm(d, 240, 150, 320, 215); fr.append(im)
+    # 4 customer leaves with the bag
+    im, d = base(); person(d, 90, (60, 90, 170)); person(d, 500, (170, 60, 60)); register(d)
+    arm(d, 100, 150, 130, 200); bag(d, 130, 205); arm(d, 490, 150, 440, 205); fr.append(im)
+    return fr
+import base64
+for name, paid, want in (("seq_unpaid", False, "unpaid"), ("seq_paid_cash", True, "ok")):
+    frames = seq_frames(paid)
+    for i, im in enumerate(frames): im.save(f"scenes/{name}_{i}.jpg", quality=85)
+    imgs = []
+    for im in frames:
+        b = io.BytesIO(); im.save(b, "JPEG", quality=85); imgs.append(base64.b64encode(b.getvalue()).decode())
+    req = urllib.request.Request(os.environ["BASE"] + "/api/analyze-seq", data=json.dumps({"images": imgs, "x": 44, "y": 40, "w": 24, "h": 26}).encode(), method="POST",
+        headers={"authorization": "Bearer " + os.environ["KEY"], "content-type": "application/json", "user-agent": "Mozilla/5.0 ShadiCamTest"})
+    try: r = json.load(urllib.request.urlopen(req, timeout=120))
+    except Exception as e: r = {"error": str(e)[:120]}
+    pv = r.get("parsed") or {}; ev = pv.get("event", "?"); cf = pv.get("confidence", 0)
+    got = "unpaid" if (ev == "unpaid" and (cf or 0) >= 0.6) else "ok"
+    ok = "ERROR" if ("error" in r or not pv) else ("PASS" if got == want else "MISS")
+    SEQ = globals().setdefault("SEQ", []); SEQ.append(f"{ok} {name}: expected {want}, AI said {ev} ({cf}) - {str(pv.get('note', r.get('error', r.get('raw', ''))))[:110]}")
+
 res = []
 for name, im in scenes().items():
     im.save(f"scenes/{name}.jpg", quality=85); buf = io.BytesIO(); im.save(buf, "JPEG", quality=85)
@@ -49,6 +81,7 @@ for name, im in scenes().items():
     got = ev if alert else "none"
     ok = "ERROR" if ("error" in r or not pv) else ("PASS" if got == want else "MISS")
     res.append(f"{ok} {name}: expected {want}, AI said {ev} ({cf}) - {str(pv.get('note', r.get('error', r.get('raw', ''))))[:110]}")
+res += globals().get("SEQ", [])
 msg = "%0A".join(res)
 print("::notice::AI scene test%0A" + msg)
 print("\n".join(res))

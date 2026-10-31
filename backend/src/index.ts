@@ -7,15 +7,17 @@ const isJpeg = (u: Uint8Array) => u.length > 3 && u[0] === 0xff && u[1] === 0xd8
 const DAY = 86_400_000, FRAME_MS = 30_000, KEEP_FRAMES_MS = 2 * DAY; // one saved picture per camera every 30 s, kept 2 days
 const MAX_IMG = 1_400_000; // D1 rows are limited to 2 MB (base64 adds a third)
 
-// Ask the vision model about a base64 JPEG. If the model's message format differs, only askText changes.
-async function askText(env: Env, imgB64: string, prompt: string): Promise<string> {
+// Ask the vision model about one or more base64 JPEGs (in time order). If the model's message format differs, only askText changes.
+async function askText(env: Env, imgs: string | string[], prompt: string): Promise<string> {
+  const list = Array.isArray(imgs) ? imgs : [imgs];
   const r = await env.AI.run(env.AI_MODEL, { messages: [{ role: "user", content: [
-    { type: "text", text: prompt }, { type: "image_url", image_url: { url: "data:image/jpeg;base64," + imgB64 } }] }] });
+    { type: "text", text: prompt }, ...list.map(i => ({ type: "image_url", image_url: { url: "data:image/jpeg;base64," + i } }))] }] });
   return String(r?.response ?? r?.choices?.[0]?.message?.content ?? "");
 }
 const parse = (text: string) => { const m = text.match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
-const ask = async (env: Env, imgB64: string, prompt: string) => parse(await askText(env, imgB64, prompt));
-const regPrompt = (z: any) => `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide: "theft" = a person takes money out of the register or drawer into their hand or pocket; "blocked" = something or someone is covering or blocking the register area so it cannot be seen; otherwise "none". Normal sales and customers paying are "none". Reply ONLY JSON: {"event":"theft|blocked|none","confidence":0-1,"note":"short reason"}`;
+const ask = async (env: Env, imgs: string | string[], prompt: string) => parse(await askText(env, imgs, prompt));
+const regPrompt = (z: any) => `Security camera frame. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide: "theft" = a person takes money out of the register or drawer into their hand or pocket; "blocked" = something or someone is covering or blocking the register area so it cannot be seen; "handoff" = an employee is handing goods or an item to a customer, or a customer is walking away holding goods; otherwise "none". Customers paying are "none" unless goods are being handed over. Reply ONLY JSON: {"event":"theft|blocked|handoff|none","confidence":0-1,"note":"short reason"}`;
+const unpaidPrompt = (z: any, n: number) => `These ${n} frames are from one shop security camera, in time order (oldest first), spanning about a minute. The cash register is inside the box x:${z.x}% y:${z.y}% w:${z.w}% h:${z.h}% of the image. Decide whether a customer received goods or an item from an employee and did NOT pay: no cash handed to the employee or put on the counter, no card or phone tapped on a payment terminal, the register drawer never opened and no cash was added. If a customer clearly paid (cash or card), or no goods were handed over, or you cannot tell, answer "ok". Reply ONLY JSON: {"event":"unpaid|ok","confidence":0-1,"note":"short reason"}`;
 
 // A "shift" is one 24-hour recording. Closing it stamps closed_at and starts a new one on the next picture.
 async function closeShift(env: Env, sh: any) {
@@ -80,6 +82,7 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
   if (!isJpeg(new Uint8Array(buf)) || buf.byteLength > MAX_IMG) return json({ error: "not a jpeg, or larger than 1.4 MB (use the camera's smaller stream)" }, 400);
   const now = Date.now(), data = b64(buf);
   await env.DB.prepare("INSERT OR REPLACE INTO latest(camera_id,data,ts) VALUES(?,?,?)").bind(id, data, now).run();
+  await env.DB.prepare("INSERT OR REPLACE INTO recent(camera_id,ts,data) VALUES(?,?,?)").bind(id, now, data).run();
   if (!cam.verified_at) await env.DB.prepare("UPDATE cameras SET verified_at=? WHERE id=?").bind(now, id).run();
   const sid = await currentShift(env, cam, now);
   if (now - (cam.last_frame || 0) >= FRAME_MS) {
@@ -90,15 +93,33 @@ async function ingest(req: Request, env: Env, id: string, token: string) {
   if (!cam.zone || now - cam.last_ai < 10_000) return json({ ok: true });
   await env.DB.prepare("UPDATE cameras SET last_ai=? WHERE id=?").bind(now, id).run();
   const z = JSON.parse(cam.zone);
-  let v: any = null;
-  try {
-    v = await ask(env, data, regPrompt(z));
-  } catch (e) { console.log("ai error", String(e)); }
-  if (v && (v.event === "theft" || v.event === "blocked") && v.confidence >= 0.6) {
+  const addAlert = async (kind: string, note: string, img: string) => { // one alert per kind per camera per 2 minutes
+    const lk = `last:${id}:${kind}`, last = Number((await env.DB.prepare("SELECT v FROM meta WHERE k=?").bind(lk).first<any>())?.v || 0);
+    if (now - last < 120_000) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)").bind(lk, String(now)).run();
     const aid = rand();
-    await env.DB.prepare("INSERT INTO alerts(id,camera_id,kind,note,image_key,created_at) VALUES(?,?,?,?,?,?)").bind(aid, id, v.event, v.note ?? "", "", now).run();
-    await env.DB.prepare("INSERT INTO alert_images(alert_id,data) VALUES(?,?)").bind(aid, data).run();
+    await env.DB.prepare("INSERT INTO alerts(id,camera_id,kind,note,image_key,created_at) VALUES(?,?,?,?,?,?)").bind(aid, id, kind, note, "", now).run();
+    await env.DB.prepare("INSERT INTO alert_images(alert_id,data) VALUES(?,?)").bind(aid, img).run();
+  };
+  // Stage 2: ~40 s after an item was handed over, look at the frames around it and ask whether it was paid for.
+  const pk = `pend:${id}`; let pend = Number((await env.DB.prepare("SELECT v FROM meta WHERE k=?").bind(pk).first<any>())?.v || 0);
+  if (pend && now - pend >= 40_000) {
+    await env.DB.prepare("DELETE FROM meta WHERE k=?").bind(pk).run();
+    const started = pend; pend = 0;
+    try {
+      const { results } = await env.DB.prepare("SELECT data FROM recent WHERE camera_id=? AND ts>=? ORDER BY ts").bind(id, started - 20_000).all<any>();
+      const all = results.map(r => r.data as string), pick = all.length <= 6 ? all : Array.from({ length: 6 }, (_, i) => all[Math.round(i * (all.length - 1) / 5)]);
+      if (pick.length >= 2) {
+        const u = await ask(env, pick, unpaidPrompt(z, pick.length));
+        if (u && u.event === "unpaid" && u.confidence >= 0.6) await addAlert("unpaid", u.note ?? "", pick[Math.floor(pick.length / 2)]);
+      }
+    } catch (e) { console.log("ai error (seq)", String(e)); }
   }
+  // Stage 1: look at the newest frame.
+  let v: any = null;
+  try { v = await ask(env, data, regPrompt(z)); } catch (e) { console.log("ai error", String(e)); }
+  if (v && (v.event === "theft" || v.event === "blocked") && v.confidence >= 0.6) await addAlert(v.event, v.note ?? "", data);
+  else if (v && v.event === "handoff" && v.confidence >= 0.6 && !pend) await env.DB.prepare("INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)").bind(pk, String(now)).run();
   return json({ ok: true });
 }
 
@@ -137,6 +158,12 @@ export default {
       const q = url.searchParams, z = { x: +(q.get("x") || 0), y: +(q.get("y") || 0), w: +(q.get("w") || 100), h: +(q.get("h") || 100) };
       try { const raw = await askText(env, b64(buf), regPrompt(z)); return json({ raw, parsed: parse(raw) }); } catch (e) { return json({ error: String(e) }, 502); }
     }
+    if (p[1] === "analyze-seq" && req.method === "POST") { // test helper: {images:[base64...], x,y,w,h}
+      const b = await req.json<any>().catch(() => ({})); const imgs: string[] = (b.images || []).slice(0, 8);
+      if (imgs.length < 2) return json({ error: "send 2-8 base64 images" }, 400);
+      const z = { x: +(b.x || 0), y: +(b.y || 0), w: +(b.w || 100), h: +(b.h || 100) };
+      try { const raw = await askText(env, imgs, unpaidPrompt(z, imgs.length)); return json({ raw, parsed: parse(raw) }); } catch (e) { return json({ error: String(e) }, 502); }
+    }
     if (p[1] === "cameras" && !p[2]) {
       if (req.method === "POST") {
         const { store, name } = await req.json<any>(); const id = rand().slice(0, 12), token = rand();
@@ -148,7 +175,7 @@ export default {
       return json(results.map((c: any) => ({ ...c, zone: c.zone ? JSON.parse(c.zone) : null, verified: !!c.verified_at })));
     }
     if (p[1] === "cameras" && p[2] && !p[3] && req.method === "DELETE") {
-      for (const q of ["DELETE FROM alert_images WHERE alert_id IN (SELECT id FROM alerts WHERE camera_id=?)", "DELETE FROM alerts WHERE camera_id=?", "DELETE FROM frames WHERE camera_id=?", "DELETE FROM latest WHERE camera_id=?", "DELETE FROM shifts WHERE camera_id=?", "DELETE FROM cameras WHERE id=?"])
+      for (const q of ["DELETE FROM alert_images WHERE alert_id IN (SELECT id FROM alerts WHERE camera_id=?)", "DELETE FROM alerts WHERE camera_id=?", "DELETE FROM frames WHERE camera_id=?", "DELETE FROM latest WHERE camera_id=?", "DELETE FROM recent WHERE camera_id=?", "DELETE FROM shifts WHERE camera_id=?", "DELETE FROM cameras WHERE id=?"])
         await env.DB.prepare(q).bind(p[2]).run();
       return json({ ok: true });
     }
@@ -202,5 +229,6 @@ export default {
     const { results } = await env.DB.prepare("SELECT * FROM shifts WHERE ended_at IS NULL AND started_at < ?").bind(Date.now() - DAY).all();
     for (const sh of results) await closeShift(env, sh);
     await env.DB.prepare("DELETE FROM frames WHERE ts < ?").bind(Date.now() - KEEP_FRAMES_MS).run();
+    await env.DB.prepare("DELETE FROM recent WHERE ts < ?").bind(Date.now() - 600_000).run();
   },
 };

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, Image, PanResponder, StyleSheet, SafeAreaView, Alert, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, Image, PanResponder, StyleSheet, SafeAreaView, Alert, ActivityIndicator, FlatList, Dimensions } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { getLocales } from "expo-localization";
 import * as Notifications from "expo-notifications";
@@ -53,7 +53,7 @@ export default function App() {
   if (scr.n === "nvr") return <AddNvr api={api} back={() => setScr({ n: "home" })} done={() => { load(); setScr({ n: "home" }); }} />;
   if (scr.n === "add") return <AddCam api={api} done={(c) => { load(); setScr({ n: "created", c }); }} back={() => setScr({ n: "home" })} />;
   if (scr.n === "created") return <Created api={api} c={scr.c} back={() => { load(); setScr({ n: "home" }); }} />;
-  if (scr.n === "cam") return <Cam api={api} cfg={cfg} cam={cams.find((c) => c.id === scr.id)} reload={load} back={() => setScr({ n: "home" })} />;
+  if (scr.n === "cam") { const cur = cams.find((c) => c.id === scr.id); if (cur) return <LivePager api={api} cfg={cfg} cams={cams.filter((c) => c.store === cur.store)} startId={scr.id} reload={load} back={() => setScr({ n: "home" })} />; }
 
   const navI = (k, icon) => (<Pressable key={k} style={s.navI} onPress={() => setTab(k)}><Text style={{ fontSize: 22, opacity: tab === k ? 1 : 0.5 }}>{icon}</Text><Text style={[s.navT, tab === k && { color: "#e53e3e", fontWeight: "700" }]}>{t("nav" + k[0].toUpperCase() + k.slice(1))}</Text></Pressable>);
   return (
@@ -110,16 +110,17 @@ function Created({ api, c, back }) {
 
 const alertText = (a) => (a.kind === "unpaid" ? t("unpaid") : a.kind === "blocked" ? t("blocked") : a.note || t("theft"));
 function DevSlim() { return <Text style={s.devSlim}>{t("devSlim")}</Text>; }
+const TILE_W = Math.round(Dimensions.get("window").width * 0.7);
 function HomeTab({ cams, cfg, tick, open, onAdd }) {
   if (!cams.length) return (<View style={{ alignItems: "center", padding: 40 }}><Text style={{ fontSize: 56 }}>📹</Text><Text style={s.h2}>{t("none")}</Text><Text style={s.mute}>{t("noneSub")}</Text><Btn onPress={onAdd}>+ {t("add")}</Btn></View>);
   const stores = [...new Set(cams.map((c) => c.store))];
   return (<ScrollView contentContainerStyle={{ padding: 12 }}><DevSlim />
     {stores.map((st) => (<View key={st}><Text style={s.sec}>{st}</Text>
-      <View style={s.grid}>{cams.filter((c) => c.store === st).map((c) => (
-        <Pressable key={c.id} style={s.tile} onPress={() => open(c.id)}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} snapToInterval={TILE_W + 10} decelerationRate="fast" contentContainerStyle={{ gap: 10, paddingEnd: 24 }}>{cams.filter((c) => c.store === st).map((c) => (
+        <Pressable key={c.id} style={s.tileH} onPress={() => open(c.id)}>
           {c.verified ? <Image source={{ uri: `${WORKER}/api/cameras/${c.id}/latest?t=${tick}`, headers: { Authorization: "Bearer " + cfg.key } }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             : <View style={s.tileOff}><Text style={{ fontSize: 28 }}>📷</Text><Text style={s.tileOffT}>{t("unable")}</Text></View>}
-          <View style={s.tileBar}><View style={[s.dot, { backgroundColor: c.verified ? "#34c759" : "#ff5a47" }]} /><Text style={s.tileN} numberOfLines={1}>{c.name}</Text></View></Pressable>))}</View></View>))}
+          <View style={s.tileBar}><View style={[s.dot, { backgroundColor: c.verified ? "#34c759" : "#ff5a47" }]} /><Text style={s.tileN} numberOfLines={1}>{c.name}</Text></View></Pressable>))}</ScrollView></View>))}
   </ScrollView>);
 }
 function AlertsTab({ api, cfg, cams }) {
@@ -152,7 +153,16 @@ function AddMenu({ go, back }) {
     <Btn onPress={() => go("hik")}>{t("syncHik")}</Btn><Btn ghost onPress={() => go("nvr")}>{t("addNvr")}</Btn><Btn ghost onPress={() => go("add")}>{t("add")}</Btn><Btn ghost onPress={back}>{t("back")}</Btn></SafeAreaView>);
 }
 
-function Cam({ api, cfg, cam, reload, back }) {
+function LivePager({ api, cfg, cams, startId, reload, back }) {
+  const [box, setBox] = useState(null), [idx, setIdx] = useState(Math.max(0, cams.findIndex((c) => c.id === startId)));
+  return (<View style={{ flex: 1 }} onLayout={(e) => setBox(e.nativeEvent.layout)}>
+    {box && <FlatList horizontal pagingEnabled style={{ direction: "ltr" }} data={cams} keyExtractor={(c) => c.id} initialScrollIndex={idx} showsHorizontalScrollIndicator={false}
+      getItemLayout={(_, i) => ({ length: box.width, offset: box.width * i, index: i })}
+      onMomentumScrollEnd={(e) => setIdx(Math.round(e.nativeEvent.contentOffset.x / box.width))}
+      renderItem={({ item, index }) => (<View style={{ width: box.width, height: box.height, direction: ar ? "rtl" : "ltr" }}><Cam api={api} cfg={cfg} cam={item} reload={reload} back={back} active={index === idx} idx={index} count={cams.length} /></View>)} />}
+  </View>);
+}
+function Cam({ api, cfg, cam, reload, back, active = true, idx = 0, count = 1 }) {
   const [frame, setFrame] = useState(null), [status, setStatus] = useState("connecting"), [err, setErr] = useState(""), [fps, setFps] = useState(0), [stale, setStale] = useState(false);
   const [paused, setPaused] = useState(false), [attempt, setAttempt] = useState(0), [rec, setRec] = useState(null), [recSec, setRecSec] = useState(0), [msg, setMsg] = useState("");
   const [menu, setMenu] = useState(false), [sub, setSub] = useState(null), [edit, setEdit] = useState(false), [tmp, setTmp] = useState(null), [alerts, setAlerts] = useState([]), [poll, setPoll] = useState(0);
@@ -177,7 +187,7 @@ function Cam({ api, cfg, cam, reload, back }) {
 
   // Live view: two staggered loops pull fresh pictures from the Hik-Connect cloud as fast as the camera answers.
   useEffect(() => {
-    if (edit || paused || sub) return; let on = true, n = 0, shown = 0, lastUp = 0; const t0 = Date.now();
+    if (edit || paused || sub || !active) return; let on = true, n = 0, shown = 0, lastUp = 0; const t0 = Date.now();
     (async () => {
       const d = await hikData(), m = d && (d.cams || []).find((x) => x.camId === cam.id);
       if (!m) { setStatus("nolive"); return; }
@@ -202,7 +212,7 @@ function Cam({ api, cfg, cam, reload, back }) {
       worker(0); worker(900);
     })();
     return () => { on = false; };
-  }, [edit, paused, sub, attempt]);
+  }, [edit, paused, sub, attempt, active]);
   useEffect(() => { if (status !== "nolive") return; const h = setInterval(() => setPoll((x) => x + 1), 5000); return () => clearInterval(h); }, [status]);
   useEffect(() => { api("/api/alerts?camera=" + cam.id).then(setAlerts).catch(() => {}); }, []);
 
@@ -221,7 +231,7 @@ function Cam({ api, cfg, cam, reload, back }) {
   const latest = `${WORKER}/api/cameras/${cam.id}/latest?t=${poll}`;
   const errTxt = /fmt|decrypt/i.test(err) ? t("errCode") : t("errOffline");
   return (<View style={{ flex: 1, backgroundColor: "#f4f2f6", paddingTop: 40 }}>
-    <View style={s.topbar2}><Pressable onPress={back} style={s.ib}><Text style={{ fontSize: 22 }}>{ar ? "→" : "←"}</Text></Pressable><Text style={s.topN} numberOfLines={1}>{cam.name}</Text>
+    <View style={s.topbar2}><Pressable onPress={back} style={s.ib}><Text style={{ fontSize: 22 }}>{ar ? "→" : "←"}</Text></Pressable><Text style={s.topN} numberOfLines={1}>{cam.name}{count > 1 ? `   ${idx + 1}/${count}` : ""}</Text>
       <Pressable onPress={() => setMenu(!menu)} style={s.ib}><Text style={{ fontSize: 22 }}>⋯</Text></Pressable></View>
     {menu && (<View style={s.menu2}><Pressable style={s.mi} onPress={find}><Text>{t("find")}</Text></Pressable><Pressable style={s.mi} onPress={() => { setMenu(false); setEdit(true); }}><Text>{t("mark")}</Text></Pressable>
       {cam.zone && <Pressable style={s.mi} onPress={() => { setMenu(false); putZone(null); }}><Text>{t("remove")}</Text></Pressable>}</View>)}
@@ -581,6 +591,7 @@ const s = StyleSheet.create({
   topT: { fontSize: 20, fontWeight: "700" }, plus: { position: "absolute", right: 14, bottom: 8, padding: 4 },
   navbar: { flexDirection: "row", backgroundColor: "#fff", paddingVertical: 8, borderTopWidth: 1, borderColor: "#e3e3e8" }, navI: { flex: 1, alignItems: "center" }, navT: { fontSize: 12, color: "#5d6b78" },
   sec: { fontSize: 17, fontWeight: "700", marginTop: 14, marginBottom: 8 }, sec2: { fontSize: 16, fontWeight: "700", marginHorizontal: 14, marginTop: 10, marginBottom: 6 },
+  tileH: { width: TILE_W, aspectRatio: 16 / 9, borderRadius: 14, overflow: "hidden", backgroundColor: "#2a3640" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, tile: { width: "48.5%", aspectRatio: 16 / 9, borderRadius: 12, overflow: "hidden", backgroundColor: "#2a3640" },
   tileOff: { flex: 1, alignItems: "center", justifyContent: "center" }, tileOffT: { color: "#cbd3da", fontSize: 12, marginTop: 4 },
   tileBar: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: "rgba(0,0,0,.45)" },

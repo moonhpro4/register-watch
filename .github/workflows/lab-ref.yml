@@ -10,5 +10,5 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg && pip install -q hikcloudstream
       - name: Record 8 s per camera with the reference library (no footage is kept)
         working-directory: lab
-        env: { HIK_EMAIL: "${{ secrets.HIK_EMAIL }}", HIK_PASSWORD: "${{ secrets.HIK_PASSWORD }}" }
+        env: { HIK_EMAIL: "${{ secrets.HIK_EMAIL }}", HIK_PASSWORD: "${{ secrets.HIK_PASSWORD }}", HIK_VERIFY_CODE: "${{ secrets.HIK_VERIFY_CODE }}" }
         run: python3 ref_stream.py

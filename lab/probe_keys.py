@@ -1,33 +1,32 @@
-import io, os, subprocess
+import os, struct
+from collections import Counter
 from hikcloudstream import Credentials, HikConnectClient
 from hikcloudstream.models import StreamType
 from hikcloudstream.stream import open_live_stream
-from hikcloudstream.stream.crypto import decrypt_h264_for_ffmpeg, decrypt_hikvision_annex_b_video
-from hikcloudstream.capture import aes_key_material
-from hikcloudstream.stream.sinks.annex_b import write_stream_payloads
 lines = []
 def log(x): lines.append(x); print(x, flush=True)
-code = os.environ["HIK_VERIFY_CODE"]
-def ff(data, fmt="h264"):
-    open("t.bin", "wb").write(data)
-    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", fmt, "-i", "t.bin", "-frames:v", "20", "-f", "null", "-"], capture_output=True, text=True)
-    n = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=width,height,nb_read_frames", "-of", "csv=p=0", "-f", fmt, "t.bin"], capture_output=True, text=True).stdout.strip()
-    return f"probe[{n}] err[{(r.stderr.strip().replace(chr(10), ' | ') or 'none')[:110]}]"
 with HikConnectClient() as c:
     c.login(Credentials(os.environ["HIK_EMAIL"], os.environ["HIK_PASSWORD"]))
-    cams = c.list_cameras(); devs = {}
-    for cam in cams: devs.setdefault(cam.device_serial, []).append(cam)
-    for ser, lst in devs.items():
-        for cam in [x for x in lst if x.channel_no in (1, 10, 12)]:
-            try:
-                img = c.capture_snapshot(cam, validate_code=code); log(f"snapshot dev..{ser[-3:]} ch{cam.channel_no}: OK {len(img)}B with the code")
-            except Exception as e: log(f"snapshot dev..{ser[-3:]} ch{cam.channel_no}: {type(e).__name__}: {str(e)[:80]}")
+    page = c.request_json("GET", "/v3/userdevices/v1/devices/pagelist", params={"groupId": -1, "limit": 50, "offset": 0, "filter": "TIME_PLAN,CONNECTION,SWITCH,STATUS,STATUS_EXT,WIFI,NODISTURB,P2P,KMS,HIDDNS"})
+    for d in page.get("deviceInfos", []):
+        sc = {k: v for k, v in d.items() if isinstance(v, (int, str, bool)) and k not in ("deviceSerial", "name", "fullSerial", "mac", "ip", "userDeviceCreateTime") and len(str(v)) < 22}
+        log(f"DEVICE ..{d['deviceSerial'][-3:]}: " + ", ".join(f"{k}={v}" for k, v in list(sc.items())[:40]))
+        ci = c.request_json("GET", "/v3/userdevices/v1/cameras/info", params={"deviceSerial": d["deviceSerial"]}).get("cameraInfos", [])
+        keys = {}
+        for it in ci:
+            for k, v in it.items():
+                if isinstance(v, (int, bool)) or (isinstance(v, str) and len(v) < 12 and k not in ("cameraName", "deviceSerial", "cameraId")): keys.setdefault(k, Counter())[v] += 1
+        log(f"  channels={len(ci)} fields: " + "; ".join(f"{k}:{dict(v)}" for k, v in keys.items() if len(v) <= 4)[:600])
+    cams = c.list_cameras()
     cam = next(x for x in cams if x.channel_no == 1 and x.device_serial.endswith("245"))
     with open_live_stream(c, cam, stream_type=StreamType.AUTO) as s:
-        s.start(); buf = io.BytesIO(); tr = write_stream_payloads(s._client, buf, max_packets=None, duration_seconds=6, allow_encrypted=True)
-    data = buf.getvalue(); log(f"stream sample {len(data)}B")
-    log("A raw: " + ff(data))
-    key = aes_key_material(code)
-    log("B lib decrypt (header encrypted): " + ff(decrypt_h264_for_ffmpeg(data, code)))
-    log("C decrypt header-plain variant: " + ff(decrypt_hikvision_annex_b_video(data, key, nalu_header_size=1)))
-print("::notice::KEY PROBE%0A" + "%0A".join(lines))
+        s.start(); n = 0
+        for pkt in s._client.iter_packets(max_packets=40):
+            b = pkt.body
+            hdr = ""
+            if len(b) >= 12:
+                v = b[0] >> 6; pt = b[1] & 0x7F; m = b[1] >> 7; seq, ts, ssrc = struct.unpack(">HII", b[2:12]); hdr = f"rtp v{v} pt{pt} m{m} seq{seq} ts{ts} "
+            log(f"pkt ch={int(pkt.channel)} enc={pkt.encrypted} len={len(b)} {hdr}payload16={b[12:28].hex()}")
+            n += 1
+            if n >= 28: break
+print("::notice::PACKET + FIELD PROBE%0A" + "%0A".join(lines))

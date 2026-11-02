@@ -6,6 +6,10 @@ import * as Notifications from "expo-notifications";
 import BackgroundService from "react-native-background-actions";
 import * as FileSystem from "expo-file-system";
 import { isapi, digestHeaders, parseDevice, parseChannels } from "./hik";
+import TcpSocket from "react-native-tcp-socket";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { openLive } from "./hikrelay";
+import { LiveTs } from "./hikts";
 import { newState, login as hikLogin, listCameras as hikList, snapshot as hikSnapshot, captureUrl as hikCapUrl, decryptCapture, b64ToBytes, bytesToB64 } from "./hikcloud";
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
@@ -162,10 +166,61 @@ function LivePager({ api, cfg, cams, startId, reload, back }) {
       renderItem={({ item, index }) => (<View style={{ width: box.width, height: box.height, direction: ar ? "rtl" : "ltr" }}><Cam api={api} cfg={cfg} cam={item} reload={reload} back={back} active={index === idx} idx={index} count={cams.length} /></View>)} />}
   </View>);
 }
+// Real live video: relay (phone -> Hik-Connect cloud) -> MPEG-TS -> tiny local server -> the player.
+function tcpConnect(host, port) {
+  return new Promise((resolve, reject) => {
+    const q = []; let waiter = null, ended = false; const wake = () => { if (waiter) { const w = waiter; waiter = null; w(); } };
+    const sk = TcpSocket.createConnection({ host, port }, () => resolve({
+      write: (b) => new Promise((r) => sk.write(b, undefined, () => r())),
+      close: () => { try { sk.destroy(); } catch {} },
+      next: async () => { while (!q.length) { if (ended) return null; await new Promise((r) => (waiter = r)); } return q.shift(); } }));
+    sk.on("data", (d) => { q.push(new Uint8Array(d)); wake(); });
+    sk.on("close", () => { ended = true; wake(); }); sk.on("error", (e) => { ended = true; wake(); reject(e); });
+  });
+}
+function VideoLive({ d, m, onLive, onFail, onChunk }) {
+  const [uri, setUri] = useState(null);
+  useEffect(() => {
+    let on = true, server = null, live = null;
+    (async () => {
+      try {
+        const st = await hikSession(d); let tries = 0;
+        const start = () => {
+          const port = 40000 + Math.floor(Math.random() * 20000);
+          server = TcpSocket.createServer((sock) => {
+            let started = false;
+            sock.on("error", () => {}); sock.on("close", () => { try { live && live.close(); } catch {} });
+            sock.on("data", async () => {
+              if (started) return; started = true;
+              sock.write("HTTP/1.0 200 OK\r\nContent-Type: video/mp2t\r\nCache-Control: no-store\r\n\r\n");
+              try {
+                live = await openLive(st, m.serial, m.ch, tcpConnect, { stream: 2 });
+                const mux = new LiveTs((b) => { sock.write(b); onChunk && onChunk(b); });
+                for await (const p of live.packets()) { if (!on) break; mux.feed(p.body); }
+              } catch (e) { HS = null; if (on) onFail(String((e && e.message) || e)); }
+              try { sock.destroy(); } catch {}
+            });
+          });
+          server.on("error", () => { if (on && tries++ < 4) start(); else if (on) onFail("local server"); });
+          server.listen({ port, host: "127.0.0.1" }, () => { if (on) setUri(`http://127.0.0.1:${port}/live.ts`); });
+        };
+        start();
+      } catch (e) { if (on) onFail(String((e && e.message) || e)); }
+    })();
+    return () => { on = false; try { live && live.close(); } catch {} try { server && server.close(); } catch {} };
+  }, []);
+  const player = useVideoPlayer(uri ? { uri } : null, (p) => { p.play(); });
+  useEffect(() => {
+    const a = player.addListener("playingChange", (e) => { if (e.isPlaying) onLive(); });
+    const b = player.addListener("statusChange", (e) => { if (e.status === "error") onFail("player " + ((e.error && e.error.message) || "")); });
+    return () => { a.remove(); b.remove(); };
+  }, [player]);
+  return uri ? <VideoView player={player} style={StyleSheet.absoluteFill} nativeControls={false} contentFit="cover" /> : null;
+}
 function Cam({ api, cfg, cam, reload, back, active = true, idx = 0, count = 1 }) {
   const [frame, setFrame] = useState(null), [status, setStatus] = useState("connecting"), [err, setErr] = useState(""), [fps, setFps] = useState(0), [stale, setStale] = useState(false);
   const [paused, setPaused] = useState(false), [attempt, setAttempt] = useState(0), [rec, setRec] = useState(null), [recSec, setRecSec] = useState(0), [msg, setMsg] = useState("");
-  const [menu, setMenu] = useState(false), [sub, setSub] = useState(null), [edit, setEdit] = useState(false), [tmp, setTmp] = useState(null), [alerts, setAlerts] = useState([]), [poll, setPoll] = useState(0);
+  const [map, setMap] = useState(null), [vidFail, setVidFail] = useState(false), [menu, setMenu] = useState(false), [sub, setSub] = useState(null), [edit, setEdit] = useState(false), [tmp, setTmp] = useState(null), [alerts, setAlerts] = useState([]), [poll, setPoll] = useState(0);
   const size = useRef({ w: 1, h: 1 }), st = useRef(null), recRef = useRef(null), lastShown = useRef(0), lastAt = useRef(0), prevFile = useRef(null), busyRec = useRef(false);
   const hdr = { Authorization: "Bearer " + cfg.key };
   recRef.current = rec;
@@ -179,15 +234,26 @@ function Cam({ api, cfg, cam, reload, back, active = true, idx = 0, count = 1 })
     const f = await SAF.createFileAsync(dir, name, "image/jpeg");
     await FileSystem.writeAsStringAsync(f, await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 }), { encoding: FileSystem.EncodingType.Base64 });
   };
-  const snap = async () => { try { if (!frame) return; const dir = await folderFor("Snapshots", "snap" + cam.id); if (!dir) return flash(t("fail")); await copyTo(dir, `${day(Date.now())} ${hms(Date.now())}`, frame); flash(t("snapSaved")); } catch { flash(t("fail")); } };
-  const toggleRec = () => setRec(rec ? null : { id: Date.now(), name: `${day(Date.now())} ${hms(Date.now()).slice(0, 5)}`, t0: Date.now() });
+  const snap = async () => { try { let src = frame; if (!src && map) src = await hikJpegFile(map.d, map.m.serial, map.m.ch, "snap"); if (!src) return flash(t("fail")); const dir = await folderFor("Snapshots", "snap" + cam.id); if (!dir) return flash(t("fail")); await copyTo(dir, `${day(Date.now())} ${hms(Date.now())}`, src); flash(t("snapSaved")); } catch { flash(t("fail")); } };
+  const toggleRec = () => { if (rec) return setRec(null); const r = { id: Date.now(), name: `${day(Date.now())} ${hms(Date.now()).slice(0, 5)}`, t0: Date.now() }; recMeta.current = r; setRec(r); };
   const saveLive = async (uri) => { const r = recRef.current; if (!r) return; const dir = await folderFor("Live " + r.name, "live" + r.id); if (dir) await copyTo(dir, hms(Date.now()), uri); };
   useEffect(() => { if (!rec) return setRecSec(0); const h = setInterval(() => setRecSec(Math.round((Date.now() - rec.t0) / 1000)), 1000); return () => clearInterval(h); }, [rec]);
   useEffect(() => { const h = setInterval(() => setStale(Date.now() - lastAt.current > 6000), 2000); return () => clearInterval(h); }, []);
 
+  useEffect(() => { hikData().then((d) => { const m = d && (d.cams || []).find((x) => x.camId === cam.id); setMap(m ? { d, m } : false); }).catch(() => setMap(false)); }, []);
+  const vidMode = !!map && !vidFail;
+  const recBuf = useRef([]), recMeta = useRef(null);
+  const onTs = (b) => { if (recRef.current) recBuf.current.push(b); };
+  const flushRec = async () => {
+    const parts = recBuf.current; recBuf.current = []; if (!parts.length || !recMeta.current) return;
+    const all = new Uint8Array(parts.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of parts) { all.set(x, o); o += x.length; }
+    const dir = await folderFor("Live " + recMeta.current.name, "live" + recMeta.current.id);
+    if (dir) { const f = await SAF.createFileAsync(dir, hms(Date.now()), "video/mp2t"); await FileSystem.writeAsStringAsync(f, bytesToB64(all), { encoding: FileSystem.EncodingType.Base64 }); }
+  };
+  useEffect(() => { if (!rec) { flushRec().catch(() => {}); return; } const h = setInterval(() => flushRec().catch(() => {}), 10000); return () => clearInterval(h); }, [rec]);
   // Live view: two staggered loops pull fresh pictures from the Hik-Connect cloud as fast as the camera answers.
   useEffect(() => {
-    if (edit || paused || sub || !active) return; let on = true, n = 0, shown = 0, lastUp = 0; const t0 = Date.now();
+    if (edit || paused || sub || !active || map === null || (map && !vidFail)) return; let on = true, n = 0, shown = 0, lastUp = 0; const t0 = Date.now();
     (async () => {
       const d = await hikData(), m = d && (d.cams || []).find((x) => x.camId === cam.id);
       if (!m) { setStatus("nolive"); return; }
@@ -212,7 +278,7 @@ function Cam({ api, cfg, cam, reload, back, active = true, idx = 0, count = 1 })
       worker(0); worker(900);
     })();
     return () => { on = false; };
-  }, [edit, paused, sub, attempt, active]);
+  }, [edit, paused, sub, attempt, active, map, vidFail]);
   useEffect(() => { if (status !== "nolive") return; const h = setInterval(() => setPoll((x) => x + 1), 5000); return () => clearInterval(h); }, [status]);
   useEffect(() => { api("/api/alerts?camera=" + cam.id).then(setAlerts).catch(() => {}); }, []);
 
@@ -237,10 +303,11 @@ function Cam({ api, cfg, cam, reload, back, active = true, idx = 0, count = 1 })
       {cam.zone && <Pressable style={s.mi} onPress={() => { setMenu(false); putZone(null); }}><Text>{t("remove")}</Text></Pressable>}</View>)}
     <View style={s.video} onLayout={(e) => (size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} {...(edit ? pan.panHandlers : {})}>
       <Image source={frame ? { uri: frame } : { uri: latest, headers: hdr }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      {vidMode && active && !edit && !paused && <VideoLive key={"v" + attempt} d={map.d} m={map.m} onLive={() => { setStatus("live"); lastAt.current = Date.now(); }} onFail={(e) => { setErr(e); setVidFail(true); setStatus("connecting"); }} onChunk={onTs} />}
       {z && <View pointerEvents="none" style={[s.zone, { left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }]} />}
       {status === "connecting" && !edit && (<View style={s.overlay}><ActivityIndicator size="large" color="#fff" /><Text style={s.ovT}>{t("connecting")}</Text></View>)}
-      {status === "error" && !edit && (<View style={s.overlay}><Text style={s.ovT}>{errTxt}</Text><Pressable style={s.ovBtn} onPress={() => { setStatus("connecting"); setAttempt(attempt + 1); }}><Text style={{ fontWeight: "700" }}>{t("retry")}</Text></Pressable></View>)}
-      {status === "live" && <View style={s.pillL}><View style={[s.dot, { backgroundColor: stale ? "#ff9f0a" : "#34c759" }]} /><Text style={s.pillT}>{stale ? t("slowB") : t("liveB")} · {fps.toFixed(1)}/s</Text></View>}
+      {status === "error" && !edit && (<View style={s.overlay}><Text style={s.ovT}>{errTxt}</Text><Pressable style={s.ovBtn} onPress={() => { setStatus("connecting"); setVidFail(false); setAttempt(attempt + 1); }}><Text style={{ fontWeight: "700" }}>{t("retry")}</Text></Pressable></View>)}
+      {status === "live" && <View style={s.pillL}><View style={[s.dot, { backgroundColor: stale ? "#ff9f0a" : "#34c759" }]} /><Text style={s.pillT}>{stale && !vidMode ? t("slowB") : t("liveB")}{vidMode ? " ▶" : ` · ${fps.toFixed(1)}/s`}</Text></View>}
       {rec && <View style={s.pillR}><Text style={s.pillT}>● REC {Math.floor(recSec / 60)}:{String(recSec % 60).padStart(2, "0")}</Text></View>}
       {edit && <View style={s.pillL}><Text style={s.pillT}>{t("drag")}</Text></View>}
     </View>

@@ -1,38 +1,39 @@
 {
- "expo": {
-  "name": "Shadi Cam",
-  "slug": "register-watch",
-  "version": "1.0.0",
-  "orientation": "portrait",
-  "android": {
-   "package": "com.registerwatch.app",
-   "permissions": [
-    "POST_NOTIFICATIONS",
-    "FOREGROUND_SERVICE",
-    "FOREGROUND_SERVICE_DATA_SYNC",
-    "WAKE_LOCK"
-   ]
-  },
-  "ios": {
-   "bundleIdentifier": "com.registerwatch.app"
-  },
-  "plugins": [
-   "expo-secure-store",
-   "expo-localization",
-   "expo-asset",
-   "expo-notifications",
-   [
-    "expo-build-properties",
-    {
-     "android": {
-      "usesCleartextTraffic": true
-     }
+  "expo": {
+    "name": "Shadi Cam",
+    "slug": "register-watch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "android": {
+      "package": "com.registerwatch.app",
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "WAKE_LOCK"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.registerwatch.app"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-localization",
+      "expo-asset",
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "./plugins/withFgs",
+      "expo-video"
+    ],
+    "locales": {
+      "ar": "./locales/ar.json"
     }
-   ],
-   "./plugins/withFgs"
-  ],
-  "locales": {
-   "ar": "./locales/ar.json"
   }
- }
 }

@@ -1,7 +1,8 @@
 // Hik-Connect cloud live relay (VTM) client, ported from the open-source pyezvizapi / hikcloudstream code.
 // Platform neutral: you give it a `connect(host, port)` that returns { write(u8), next() -> Promise<u8|null>, close() }.
 const { hdrs } = require("./hikcloud");
-const enc = new TextEncoder(), dec = new TextDecoder();
+const enc = { encode: (s) => { const e = unescape(encodeURIComponent(s)), o = new Uint8Array(e.length); for (let i = 0; i < e.length; i++) o[i] = e.charCodeAt(i); return o; } };
+const dec = { decode: (u) => { let s = ""; for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); try { return decodeURIComponent(escape(s)); } catch { return s; } } };
 const cat = (...a) => { const o = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let p = 0; for (const x of a) { o.set(x, p); p += x.length; } return o; };
 
 // ---- tiny protobuf ----
@@ -50,7 +51,7 @@ async function vtduTokens(st) {
     const r = await fetch(`${st.base}/api/user/token/get`, { method: "POST", headers: { ...hdrs(st), "Content-Type": "application/x-www-form-urlencoded" }, body: `sessionId=${qp(st.session)}&count=5` });
     const j = await r.json(), t = j.tokenArray || j.tokens; if (Array.isArray(t) && t.length) return t.map(String); last = JSON.stringify(j).slice(0, 120);
   } catch (e) { last = String(e); }
-  const sign = jwtClaim(st.session, "s"), host = new URL(st.base).hostname, cands = [];
+  const sign = jwtClaim(st.session, "s"), host = (st.base.match(/^https?:\/\/([^\/:]+)/) || [])[1] || "", cands = [];
   try { const si = (await jget(st, "/v3/configurations/system/info")).systemConfigInfo || {}; if (si.authAddr && !/null|none/i.test(si.authAddr)) cands.push(/^https?:/.test(si.authAddr) ? si.authAddr : "https://" + si.authAddr); } catch {}
   const m = host.match(/^api(.*)\.hik-connect\.com$/); if (m) cands.push(`https://${m[1]}auth.hik-connect.com`, `https://auth${m[1]}.hik-connect.com`, `https://${m[1]}auth.ezvizlife.com`);
   for (const b of cands) { try { const j = await jget(st, "/vtdutoken2", { ssid: st.session, sign }, b.replace(/\/$/, "")); if ((j.retcode === 0 || j.retcode === "0") && j.tokens && j.tokens.length) return j.tokens.map(String); } catch (e) { last = String(e); } }
@@ -66,7 +67,8 @@ async function streamUrl(st, serial, ch, stream) {
   if (!host || !port) throw new Error("no VTM endpoint");
   const token = (await vtduTokens(st))[0];
   const biz = String(res.streamBizUrl || ""), bq = biz.includes("?") ? biz.split("?")[1] : biz.replace(/^\?/, "");
-  const params = []; for (const [k, v] of new URLSearchParams(bq)) params.push([k, v]);
+  const params = []; const dq = (x) => { try { return decodeURIComponent(x.replace(/\+/g, " ")); } catch { return x; } };
+  for (const kv of bq.split("&")) { if (!kv) continue; const i = kv.indexOf("="); params.push(i < 0 ? [dq(kv), ""] : [dq(kv.slice(0, i)), dq(kv.slice(i + 1))]); }
   for (const kv of [["dev", serial], ["chn", String(ch)], ["stream", String(stream)], ["cln", "55"], ["isp", "0"], ["auth", "1"], ["ssn", token], ["vip", "0"], ["timestamp", String(Date.now())]]) {
     const i = params.findIndex((p) => p[0] === kv[0]); if (i >= 0) params.splice(i, 1); params.push(kv);
   }

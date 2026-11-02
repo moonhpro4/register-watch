@@ -1,0 +1,14 @@
+name: Lab - JS relay test
+on: workflow_dispatch
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg && cd app && npm install --no-audit --no-fund
+      - name: Run the JS relay against the real Hik-Connect cloud (no footage is kept)
+        working-directory: lab
+        env: { HIK_EMAIL: "${{ secrets.HIK_EMAIL }}", HIK_PASSWORD: "${{ secrets.HIK_PASSWORD }}" }
+        run: node relay_test.js

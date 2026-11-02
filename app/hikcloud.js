@@ -71,4 +71,4 @@ async function snapshot(st, serial, ch, code, download) {
 }
 const b64ToBytes = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
 const bytesToB64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
-module.exports = { hdrs, newState, login, listCameras, snapshot, captureUrl, decryptCapture, b64ToBytes, bytesToB64 };
+module.exports = { hdrs: hdr, newState, login, listCameras, snapshot, captureUrl, decryptCapture, b64ToBytes, bytesToB64 };

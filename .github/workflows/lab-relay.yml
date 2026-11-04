@@ -11,4 +11,4 @@ jobs:
       - name: Run the JS relay against the real Hik-Connect cloud (no footage is kept)
         working-directory: lab
         env: { HIK_EMAIL: "${{ secrets.HIK_EMAIL }}", HIK_PASSWORD: "${{ secrets.HIK_PASSWORD }}" }
-        run: node ts_test.js
+        run: node names.js
